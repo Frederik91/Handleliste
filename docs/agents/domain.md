@@ -1,4 +1,4 @@
-# Domain Docs
+# Domain docs
 
 This is a single-context repository.
 

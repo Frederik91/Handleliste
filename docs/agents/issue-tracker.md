@@ -17,11 +17,11 @@ Infer the repository from `git remote -v`; `gh` does this automatically inside t
 
 **PRs as a request surface: no.**
 
-## When a skill says “publish to the issue tracker”
+## When a skill says "publish to the issue tracker"
 
 Create a GitHub issue.
 
-## When a skill says “fetch the relevant ticket”
+## When a skill says "fetch the relevant ticket"
 
 Run `gh issue view <number> --comments`.
 

@@ -1,4 +1,4 @@
-# Triage Labels
+# Triage labels
 
 | Canonical role     | Repository label   | Meaning                                   |
 | ------------------ | ------------------ | ----------------------------------------- |

@@ -21,11 +21,11 @@ All Shopping Items for one Product, kept together for display and assigned one p
 _Avoid_: Store section, merged package
 
 **Quick Entry**:
-A single text entry that may contain a Product name, Quantity, Package Size, and Unit, such as “Chorizo 300g.” Recognized values become structured Product and Shopping Item data without requiring a setup flow.
+A single text entry that may contain a Product name, Quantity, Package Size, and Unit, such as "Chorizo 300g." The parser turns recognized values into Product and Shopping Item data without opening a setup form.
 _Avoid_: Product setup form, advanced entry
 
 **Product**:
-A stable, reusable identity for something the household buys, such as milk or bread. It always has an effective default, but when no size is specified the application silently supplies “1 unit”; explicitly merging duplicates combines matching Package Options and migrates every reference and contribution without losing provenance.
+A stable identity for something the household buys, such as milk or bread. When no size is specified, the application supplies "1 unit." An explicit merge combines matching Package Options and moves every reference and contribution to the surviving Product.
 _Avoid_: Shopping item, known item
 
 **Package Option**:
@@ -33,7 +33,7 @@ One configured size and unit in which a Product can be bought, such as 1 L or 1.
 _Avoid_: Quantity, amount
 
 **Default Package Option**:
-The Package Option selected automatically when adding a Product through Quick Entry without an explicit size. A new Product requires no package setup because “1 unit” is generated implicitly; changing the default never changes existing Shopping Items.
+The Package Option selected when Quick Entry has no explicit size. A new Product gets an implicit "1 unit" option, so the user does not have to configure one. Changing the default never changes existing Shopping Items.
 _Avoid_: Suggested size
 
 **Quantity**:
@@ -53,7 +53,7 @@ The measured amount and unit of a specific Product required by a Recipe, such as
 _Avoid_: Package option, shopping item
 
 **Recipe Demand**:
-The total measured amount of a Product required by all selected Recipe counts. A participating Product shows “Recipes need” with either “Outside recipes” or “Missing for recipes,” and offers a per-Recipe breakdown; package quantities remain the primary shopping instruction.
+The total measured amount of a Product required by all selected Recipe counts. A participating Product shows "Recipes need" with either "Outside recipes" or "Missing for recipes." A per-Recipe breakdown explains the total, while package quantities remain the main shopping instruction.
 _Avoid_: Package quantity
 
 **Always in Stock**:
