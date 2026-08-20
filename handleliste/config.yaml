@@ -1,0 +1,24 @@
+name: Handleliste
+version: "0.1.0"
+slug: handleliste
+description: A shared, recipe-aware shopping list for Home Assistant
+url: https://github.com/Frederik91/Handleliste
+arch:
+  - amd64
+  - aarch64
+startup: application
+boot: auto
+init: false
+ingress: true
+ingress_port: 8099
+ingress_entry: /
+panel_title: Handleliste
+panel_icon: mdi:cart-outline
+panel_admin: false
+homeassistant_api: true
+backup: cold
+watchdog: http://[HOST]:[PORT:8099]/health
+apparmor: true
+ports: {}
+options: {}
+schema: {}
