@@ -14,7 +14,9 @@ export interface FakeHomeAssistantUser {
 export interface FakeHomeAssistantOptions {
   aiTaskResult?: unknown;
   appOrigin: string;
+  delayFirstShoppingItemResponseMs?: number;
   theme?: {
+    cardBackgroundColor: string;
     primaryBackgroundColor: string;
     primaryColor: string;
     primaryTextColor: string;
@@ -36,6 +38,7 @@ export async function startFakeHomeAssistant(
   options: FakeHomeAssistantOptions,
 ): Promise<RunningFakeHomeAssistant> {
   const appOrigin = new URL(options.appOrigin);
+  let shoppingItemResponsesDelayed = 0;
   const server = createServer((request, response) => {
     const requestUrl = request.url ?? "/";
     if (requestUrl === "/api/services/ai_task/generate_data?return_response") {
@@ -44,6 +47,7 @@ export async function startFakeHomeAssistant(
     }
     if (requestUrl === "/") {
       const theme = options.theme ?? {
+        cardBackgroundColor: "#ffffff",
         primaryBackgroundColor: "#fafafa",
         primaryColor: "#03a9f4",
         primaryTextColor: "#212121",
@@ -51,7 +55,7 @@ export async function startFakeHomeAssistant(
       };
       response.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(`
         <!doctype html>
-        <html style="--primary-background-color:${theme.primaryBackgroundColor};--primary-color:${theme.primaryColor};--primary-text-color:${theme.primaryTextColor};--text-primary-color:${theme.textPrimaryColor}">
+        <html style="--card-background-color:${theme.cardBackgroundColor};--primary-background-color:${theme.primaryBackgroundColor};--primary-color:${theme.primaryColor};--primary-text-color:${theme.primaryTextColor};--text-primary-color:${theme.textPrimaryColor}">
           <body style="margin:0"><iframe title="Handleliste" src="${INGRESS_PATH}/" style="border:0;width:100vw;height:100vh"></iframe></body>
         </html>
       `);
@@ -80,8 +84,21 @@ export async function startFakeHomeAssistant(
         port: appOrigin.port,
       },
       (upstreamResponse) => {
-        response.writeHead(upstreamResponse.statusCode ?? 502, upstreamResponse.headers);
-        upstreamResponse.pipe(response);
+        const forwardResponse = () => {
+          response.writeHead(upstreamResponse.statusCode ?? 502, upstreamResponse.headers);
+          upstreamResponse.pipe(response);
+        };
+        const shouldDelay =
+          upstreamPath === "/api/shopping-list/items" &&
+          request.method === "POST" &&
+          shoppingItemResponsesDelayed === 0 &&
+          options.delayFirstShoppingItemResponseMs !== undefined;
+        if (shouldDelay) {
+          shoppingItemResponsesDelayed += 1;
+          setTimeout(forwardResponse, options.delayFirstShoppingItemResponseMs);
+        } else {
+          forwardResponse();
+        }
       },
     );
     upstream.on("error", (error) => {

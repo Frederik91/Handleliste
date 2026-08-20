@@ -2,6 +2,8 @@ import { readFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
 import { extname, join, resolve, sep } from "node:path";
 import { UserPreferences, type Locale } from "./user-preferences.js";
+import { ShoppingListStore } from "./shopping-list.js";
+import { ShoppingListEvents } from "./shopping-list-events.js";
 
 export interface ApplicationOptions {
   dataDirectory: string;
@@ -16,6 +18,14 @@ export interface RunningApplication {
   origin: string;
 }
 
+interface RequestContext {
+  preferences: UserPreferences;
+  shoppingList: ShoppingListStore;
+  shoppingListEvents: ShoppingListEvents;
+  trustedIngressAddresses: ReadonlySet<string>;
+  webRoot: string;
+}
+
 export async function startHandlelisteApp(
   options: ApplicationOptions,
 ): Promise<RunningApplication> {
@@ -25,8 +35,17 @@ export async function startHandlelisteApp(
     options.trustedIngressAddresses ?? ["172.30.32.2"],
   );
   const preferences = new UserPreferences(options.dataDirectory);
+  const shoppingList = new ShoppingListStore(options.dataDirectory);
+  const shoppingListEvents = new ShoppingListEvents();
+  const context: RequestContext = {
+    preferences,
+    shoppingList,
+    shoppingListEvents,
+    trustedIngressAddresses,
+    webRoot,
+  };
   const server = createServer((request, response) => {
-    void handleRequest(request, response, webRoot, trustedIngressAddresses, preferences);
+    void handleRequest(request, response, context);
   });
 
   await listen(server, options.port ?? 0, host);
@@ -37,8 +56,10 @@ export async function startHandlelisteApp(
 
   return {
     close: async () => {
+      shoppingListEvents.close();
       await close(server);
       preferences.close();
+      shoppingList.close();
     },
     origin: `http://${host}:${address.port}`,
   };
@@ -47,9 +68,7 @@ export async function startHandlelisteApp(
 async function handleRequest(
   request: IncomingMessage,
   response: ServerResponse,
-  webRoot: string,
-  trustedIngressAddresses: ReadonlySet<string>,
-  preferences: UserPreferences,
+  context: RequestContext,
 ): Promise<void> {
   try {
     if (request.url === "/health") {
@@ -58,7 +77,7 @@ async function handleRequest(
     }
 
     const remoteAddress = normalizeAddress(request.socket.remoteAddress);
-    if (!remoteAddress || !trustedIngressAddresses.has(remoteAddress)) {
+    if (!remoteAddress || !context.trustedIngressAddresses.has(remoteAddress)) {
       send(response, 403, "text/plain; charset=utf-8", "Ingress proxy required");
       return;
     }
@@ -70,21 +89,47 @@ async function handleRequest(
     }
 
     const pathname = new URL(request.url ?? "/", "http://handleliste.local").pathname;
+    if (pathname === "/api/shopping-list" && request.method === "GET") {
+      sendJson(response, 200, context.shoppingList.getSnapshot());
+      return;
+    }
+
+    if (pathname === "/api/shopping-list/events" && request.method === "GET") {
+      context.shoppingListEvents.connect(response);
+      return;
+    }
+
+    if (pathname === "/api/shopping-list/items" && request.method === "POST") {
+      const body = await readJson(request);
+      if (typeof body.entry !== "string" || body.entry.trim() === "") {
+        sendJson(response, 400, { error: "Entry must contain a Product name" });
+        return;
+      }
+      const snapshot = context.shoppingList.addQuickEntry(body.entry);
+      context.shoppingListEvents.publishChanged();
+      sendJson(response, 201, snapshot);
+      return;
+    }
+
     if (pathname === "/api/preferences/locale" && request.method === "POST") {
       const body = await readJson(request);
       if (!isLocale(body.locale)) {
         sendJson(response, 400, { error: "Locale must be 'en' or 'nb'" });
         return;
       }
-      preferences.setLocale(identity.id, body.locale);
+      context.preferences.setLocale(identity.id, body.locale);
       sendJson(response, 200, { locale: body.locale });
       return;
     }
 
     if (pathname === "/") {
-      const template = await readFile(join(webRoot, "index.html"), "utf8");
+      const template = await readFile(join(context.webRoot, "index.html"), "utf8");
       const bootstrap = escapeJsonForHtml(
-        JSON.stringify({ identity, locale: preferences.getLocale(identity.id) }),
+        JSON.stringify({
+          identity,
+          locale: context.preferences.getLocale(identity.id),
+          shoppingList: context.shoppingList.getSnapshot(),
+        }),
       );
       const html = template.replace(
         "<!--HANDLELISTE_BOOTSTRAP-->",
@@ -94,14 +139,18 @@ async function handleRequest(
       return;
     }
 
-    const filePath = resolve(webRoot, `.${pathname}`);
-    if (!filePath.startsWith(`${webRoot}${sep}`)) {
+    const filePath = resolve(context.webRoot, `.${pathname}`);
+    if (!filePath.startsWith(`${context.webRoot}${sep}`)) {
       send(response, 404, "text/plain; charset=utf-8", "Not found");
       return;
     }
     const body = await readFile(filePath);
     send(response, 200, contentType(filePath), body);
   } catch (error) {
+    if (error instanceof RequestBodyError) {
+      sendJson(response, error.status, { error: error.message });
+      return;
+    }
     const status = isMissingFile(error) ? 404 : 500;
     send(response, status, "text/plain; charset=utf-8", status === 404 ? "Not found" : "Internal server error");
   }
@@ -114,12 +163,23 @@ async function readJson(request: IncomingMessage): Promise<Record<string, unknow
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     size += buffer.length;
     if (size > 16_384) {
-      throw new Error("Request body is too large");
+      throw new RequestBodyError(413, "Request body is too large");
     }
     chunks.push(buffer);
   }
-  const value: unknown = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  let value: unknown;
+  try {
+    value = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  } catch {
+    throw new RequestBodyError(400, "Request body must be valid JSON");
+  }
   return typeof value === "object" && value !== null ? value as Record<string, unknown> : {};
+}
+
+class RequestBodyError extends Error {
+  constructor(readonly status: 400 | 413, message: string) {
+    super(message);
+  }
 }
 
 function isLocale(value: unknown): value is Locale {
