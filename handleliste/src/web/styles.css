@@ -104,6 +104,37 @@ select {
   background: var(--card-background-color, #fff);
 }
 
+.quick-entry-input {
+  position: relative;
+  min-width: 0;
+  flex: 1;
+}
+
+.quick-entry-input input {
+  width: 100%;
+}
+
+.product-suggestions {
+  position: absolute;
+  z-index: 1;
+  inset: calc(100% + 0.25rem) 0 auto;
+  display: grid;
+  padding: 0.25rem;
+  border: 1px solid var(--divider-color, #bdbdbd);
+  border-radius: 0.35rem;
+  background: var(--card-background-color, #fff);
+  box-shadow: 0 3px 8px rgb(0 0 0 / 18%);
+}
+
+.product-suggestions button {
+  border: 0;
+  padding: 0.6rem;
+  color: var(--primary-text-color, #212121);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
 .quick-entry button {
   border: 0;
   border-radius: 0.35rem;
@@ -113,12 +144,28 @@ select {
   cursor: pointer;
 }
 
+.shopping-list,
+.product-group ul {
+  padding: 0;
+  list-style: none;
+}
+
 .shopping-list {
   display: grid;
   gap: 0.65rem;
   margin: 1.5rem 0 0;
-  padding: 0;
-  list-style: none;
+}
+
+.product-group h2 {
+  margin: 0 0 0.4rem;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.product-group ul {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0;
 }
 
 .shopping-item {
@@ -138,6 +185,54 @@ select {
   white-space: nowrap;
 }
 
+.edit-item {
+  margin-left: auto;
+  border: 1px solid var(--divider-color, #bdbdbd);
+  border-radius: 0.3rem;
+  padding: 0.35rem 0.6rem;
+  color: var(--primary-text-color, #212121);
+  background: transparent;
+  cursor: pointer;
+}
+
+.item-editor {
+  width: 100%;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.item-editor label {
+  display: grid;
+  gap: 0.25rem;
+  color: var(--secondary-text-color, #727272);
+  font-size: 0.85rem;
+}
+
+.item-editor select,
+.item-editor input {
+  width: 100%;
+  border: 1px solid var(--divider-color, #bdbdbd);
+  border-radius: 0.3rem;
+  padding: 0.55rem;
+  color: var(--primary-text-color, #212121);
+  background: var(--card-background-color, #fff);
+  font: inherit;
+}
+
+.item-editor-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.item-editor-actions button {
+  border: 1px solid var(--primary-color, #03a9f4);
+  border-radius: 0.3rem;
+  padding: 0.45rem 0.75rem;
+  color: var(--primary-text-color, #212121);
+  background: transparent;
+  cursor: pointer;
+}
+
 .error {
   color: var(--error-color, #db4437);
 }
@@ -149,4 +244,28 @@ select {
 
 .cart {
   font-size: 3rem;
+}
+
+.undo-notification {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.8rem 1rem;
+  border-radius: 0.35rem;
+  color: var(--text-primary-color, #fff);
+  background: var(--primary-text-color, #212121);
+  box-shadow: 0 3px 10px rgb(0 0 0 / 25%);
+}
+
+.undo-notification button {
+  border: 0;
+  padding: 0.25rem;
+  color: var(--primary-color, #03a9f4);
+  background: transparent;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
 }

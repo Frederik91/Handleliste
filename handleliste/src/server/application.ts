@@ -4,6 +4,9 @@ import { extname, join, resolve, sep } from "node:path";
 import { UserPreferences, type Locale } from "./user-preferences.js";
 import { ShoppingListStore } from "./shopping-list.js";
 import { ShoppingListEvents } from "./shopping-list-events.js";
+import { AddQuickEntryCommand } from "../domain/quick-entry.js";
+import { isPackageUnit } from "../shared/package-option.js";
+import { ShoppingListCommandError } from "./shopping-list.js";
 
 export interface ApplicationOptions {
   dataDirectory: string;
@@ -19,6 +22,7 @@ export interface RunningApplication {
 }
 
 interface RequestContext {
+  addQuickEntry: AddQuickEntryCommand;
   preferences: UserPreferences;
   shoppingList: ShoppingListStore;
   shoppingListEvents: ShoppingListEvents;
@@ -38,6 +42,7 @@ export async function startHandlelisteApp(
   const shoppingList = new ShoppingListStore(options.dataDirectory);
   const shoppingListEvents = new ShoppingListEvents();
   const context: RequestContext = {
+    addQuickEntry: new AddQuickEntryCommand(shoppingList),
     preferences,
     shoppingList,
     shoppingListEvents,
@@ -105,9 +110,59 @@ async function handleRequest(
         sendJson(response, 400, { error: "Entry must contain a Product name" });
         return;
       }
-      const snapshot = context.shoppingList.addQuickEntry(body.entry);
+      const productId = body.productId;
+      if (productId !== undefined && (!Number.isSafeInteger(productId) || Number(productId) < 1)) {
+        sendJson(response, 400, { error: "Product ID must be a positive integer" });
+        return;
+      }
+      const snapshot = context.addQuickEntry.execute({
+        entry: body.entry,
+        productId: productId === undefined ? undefined : Number(productId),
+      });
       context.shoppingListEvents.publishChanged();
       sendJson(response, 201, snapshot);
+      return;
+    }
+
+    if (pathname === "/api/shopping-list/quick-entry/undo" && request.method === "POST") {
+      const body = await readJson(request);
+      if (typeof body.token !== "string" || body.token.trim() === "") {
+        sendJson(response, 400, { error: "Undo token is required" });
+        return;
+      }
+      const snapshot = context.shoppingList.undoQuickEntry(body.token);
+      context.shoppingListEvents.publishChanged();
+      sendJson(response, 200, snapshot);
+      return;
+    }
+
+    const shoppingItemMatch = pathname.match(/^\/api\/shopping-list\/items\/(\d+)$/);
+    if (shoppingItemMatch && request.method === "PATCH") {
+      const body = await readJson(request);
+      const itemId = Number(shoppingItemMatch[1]);
+      if (
+        typeof body.productName !== "string"
+        || body.productName.trim() === ""
+        || (body.productId !== undefined && !isPositiveInteger(body.productId))
+        || typeof body.packageSize !== "number"
+        || !Number.isFinite(body.packageSize)
+        || body.packageSize <= 0
+        || !isPackageUnit(body.packageUnit)
+        || !isPositiveInteger(body.quantity)
+      ) {
+        sendJson(response, 400, { error: "Product, Package Option, and Quantity are invalid" });
+        return;
+      }
+      const snapshot = context.shoppingList.updateItem({
+        itemId,
+        packageSize: body.packageSize,
+        packageUnit: body.packageUnit,
+        productId: body.productId,
+        productName: body.productName,
+        quantity: body.quantity,
+      });
+      context.shoppingListEvents.publishChanged();
+      sendJson(response, 200, snapshot);
       return;
     }
 
@@ -147,6 +202,10 @@ async function handleRequest(
     const body = await readFile(filePath);
     send(response, 200, contentType(filePath), body);
   } catch (error) {
+    if (error instanceof ShoppingListCommandError) {
+      sendJson(response, 400, { error: error.message });
+      return;
+    }
     if (error instanceof RequestBodyError) {
       sendJson(response, error.status, { error: error.message });
       return;
@@ -184,6 +243,10 @@ class RequestBodyError extends Error {
 
 function isLocale(value: unknown): value is Locale {
   return value === "en" || value === "nb";
+}
+
+function isPositiveInteger(value: unknown): value is number {
+  return Number.isSafeInteger(value) && Number(value) > 0;
 }
 
 function readIdentity(request: IncomingMessage) {

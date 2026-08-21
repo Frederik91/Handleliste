@@ -58,7 +58,7 @@ test("uses the active Home Assistant theme inside the Ingress panel", async ({ p
 
     await expect(panel.locator(".top-bar")).toHaveCSS("background-color", "rgb(18, 52, 86)");
     await expect(panel.locator(".app-shell")).toHaveCSS("background-color", "rgb(12, 24, 36)");
-    const quickEntry = panel.getByRole("textbox", { name: "Add item" });
+    const quickEntry = panel.getByRole("combobox", { name: "Add item" });
     await quickEntry.fill("Bread");
     await quickEntry.press("Enter");
     await expect(panel.locator(".shopping-item")).toHaveCSS("background-color", "rgb(20, 30, 40)");
