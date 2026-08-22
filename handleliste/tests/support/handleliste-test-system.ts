@@ -29,6 +29,7 @@ export interface HandlelisteTestSystem {
     options?: Omit<FakeHomeAssistantOptions, "appOrigin">,
   ): Promise<RunningFakeHomeAssistant>;
   close(): Promise<void>;
+  databasePath: string;
   restart(): Promise<void>;
 }
 
@@ -52,6 +53,7 @@ export async function startHandlelisteTestSystem(): Promise<HandlelisteTestSyste
       await app.close();
       await rm(dataDirectory, { force: true, recursive: true });
     },
+    databasePath: join(dataDirectory, "handleliste.sqlite"),
     async restart() {
       await closeHomeAssistants(homeAssistants);
       homeAssistants = [];

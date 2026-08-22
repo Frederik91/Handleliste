@@ -144,8 +144,25 @@ select {
   cursor: pointer;
 }
 
+.trip-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.trip-actions button {
+  border: 1px solid var(--divider-color, #bdbdbd);
+  border-radius: 0.35rem;
+  padding: 0.5rem 0.75rem;
+  color: var(--primary-text-color, #212121);
+  background: var(--card-background-color, #fff);
+  cursor: pointer;
+}
+
 .shopping-list,
-.product-group ul {
+.product-group ul,
+.completed-section ul {
   padding: 0;
   list-style: none;
 }
@@ -160,6 +177,23 @@ select {
   margin: 0 0 0.4rem;
   font-size: 1rem;
   font-weight: 600;
+}
+
+.completed-section {
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--divider-color, #bdbdbd);
+}
+
+.completed-section h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.05rem;
+}
+
+.completed-section ul {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0;
 }
 
 .product-group ul {
@@ -183,6 +217,23 @@ select {
 .shopping-item span {
   color: var(--secondary-text-color, #727272);
   white-space: nowrap;
+}
+
+.complete-item {
+  width: 1.2rem;
+  height: 1.2rem;
+  flex: 0 0 auto;
+  accent-color: var(--primary-color, #03a9f4);
+  cursor: pointer;
+}
+
+.completed-item strong {
+  flex: 1;
+  text-decoration: line-through;
+}
+
+.completed-item span {
+  text-decoration: line-through;
 }
 
 .edit-item {

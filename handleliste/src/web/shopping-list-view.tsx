@@ -11,12 +11,15 @@ import type {
 
 interface ShoppingListLabels {
   cancel: string;
+  complete: string;
+  completed: string;
   edit: string;
   editItemFailed: string;
   packageSize: string;
   product: string;
   quantity: string;
   save: string;
+  restore: string;
   unit: string;
   unitLabel: string;
 }
@@ -24,12 +27,20 @@ interface ShoppingListLabels {
 interface ShoppingListViewProps {
   labels: ShoppingListLabels;
   onSave(edit: ShoppingItemEdit): Promise<boolean>;
+  onToggleCompletion(itemId: number, completed: boolean): void;
   shoppingList: ShoppingListSnapshot;
 }
 
-export function ShoppingListView({ labels, onSave, shoppingList }: ShoppingListViewProps) {
+export function ShoppingListView({
+  labels,
+  onSave,
+  onToggleCompletion,
+  shoppingList,
+}: ShoppingListViewProps) {
   const [editingItemId, setEditingItemId] = useState<number>();
   const [editError, setEditError] = useState(false);
+  const activeItems = shoppingList.items.filter((item) => item.state.kind === "active");
+  const completedItems = shoppingList.items.filter((item) => item.state.kind === "completed");
 
   async function save(edit: ShoppingItemEdit) {
     setEditError(false);
@@ -42,7 +53,7 @@ export function ShoppingListView({ labels, onSave, shoppingList }: ShoppingListV
 
   return (
     <div className="shopping-list" aria-live="polite">
-      {groupItemsByProduct(shoppingList).map(({ items, product }) => (
+      {groupItemsByProduct(activeItems).map(({ items, product }) => (
         <section aria-label={product.name} className="product-group" key={product.id} role="group">
           <h2>{product.name}</h2>
           <ul>
@@ -60,6 +71,13 @@ export function ShoppingListView({ labels, onSave, shoppingList }: ShoppingListV
                   />
                 ) : (
                   <>
+                    <input
+                      aria-label={`${labels.complete} ${product.name}`}
+                      checked={false}
+                      className="complete-item"
+                      onChange={() => onToggleCompletion(item.id, true)}
+                      type="checkbox"
+                    />
                     <span>
                       {item.quantity} × {formatSize(item.packageOption.size)} {formatUnit(item.packageOption.unit, labels.unit)}
                     </span>
@@ -80,6 +98,28 @@ export function ShoppingListView({ labels, onSave, shoppingList }: ShoppingListV
           </ul>
         </section>
       ))}
+      {completedItems.length > 0 ? (
+        <section className="completed-section" aria-labelledby="completed-title">
+          <h2 id="completed-title">{labels.completed}</h2>
+          <ul>
+            {completedItems.map((item) => (
+              <li className="shopping-item completed-item" key={item.id}>
+                <input
+                  aria-label={`${labels.restore} ${item.product.name}`}
+                  checked
+                  className="complete-item"
+                  onChange={() => onToggleCompletion(item.id, false)}
+                  type="checkbox"
+                />
+                <strong>{item.product.name}</strong>
+                <span>
+                  {item.quantity} × {formatSize(item.packageOption.size)} {formatUnit(item.packageOption.unit, labels.unit)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
     </div>
   );
 }
@@ -193,11 +233,17 @@ function ShoppingItemEditor({
   );
 }
 
-function groupItemsByProduct(shoppingList: ShoppingListSnapshot) {
-  return shoppingList.products.flatMap((product) => {
-    const items = shoppingList.items.filter((item) => item.product.id === product.id);
-    return items.length > 0 ? [{ items, product }] : [];
-  });
+function groupItemsByProduct(shoppingItems: readonly ShoppingListItem[]) {
+  const groups = new Map<number, { items: ShoppingListItem[]; product: ShoppingListItem["product"] }>();
+  for (const item of shoppingItems) {
+    const group = groups.get(item.product.id);
+    if (group) {
+      group.items.push(item);
+    } else {
+      groups.set(item.product.id, { items: [item], product: item.product });
+    }
+  }
+  return [...groups.values()];
 }
 
 function formatSize(size: number): string {

@@ -20,21 +20,32 @@ interface BootstrapData {
 
 type Locale = "en" | "nb";
 
+type UndoNotice =
+  | { kind: "clear-completed"; token: string }
+  | { kind: "quick-entry"; token: string };
+
 const translations = {
   en: {
     add: "Add",
     addItem: "Add item",
     addItemFailed: "Could not add the item. Try again.",
     cancel: "Cancel",
+    clearCompleted: "Clear completed",
+    complete: "Complete",
+    completed: "Completed",
     edit: "Edit",
     editItemFailed: "Could not save the item. Try again.",
     emptyDescription: "Items you add will appear here.",
     emptyTitle: "Your shopping list is ready",
     itemAdded: "Item added",
+    itemsCleared: "Completed items cleared",
     language: "Language",
     packageSize: "Package size",
     product: "Product",
     quantity: "Quantity",
+    newTrip: "New shopping trip",
+    newTripWarning: "Start a new shopping trip? All active, completed, and purchased items from this trip will be removed.",
+    restore: "Restore",
     save: "Save",
     undo: "Undo",
     unit: "unit",
@@ -45,15 +56,22 @@ const translations = {
     addItem: "Legg til vare",
     addItemFailed: "Kunne ikke legge til varen. Prøv igjen.",
     cancel: "Avbryt",
+    clearCompleted: "Fjern fullførte",
+    complete: "Fullfør",
+    completed: "Fullført",
     edit: "Rediger",
     editItemFailed: "Kunne ikke lagre varen. Prøv igjen.",
     emptyDescription: "Varer du legger til, vises her.",
     emptyTitle: "Handlelisten din er klar",
     itemAdded: "Vare lagt til",
+    itemsCleared: "Fullførte varer fjernet",
     language: "Språk",
     packageSize: "Pakningsstørrelse",
     product: "Produkt",
     quantity: "Antall",
+    newTrip: "Ny handletur",
+    newTripWarning: "Starte en ny handletur? Alle aktive, fullførte og kjøpte varer fra denne turen blir fjernet.",
+    restore: "Gjenopprett",
     save: "Lagre",
     undo: "Angre",
     unit: "enhet",
@@ -74,7 +92,7 @@ function App() {
   const [entry, setEntry] = useState("");
   const [selectedProductId, setSelectedProductId] = useState<number>();
   const [addError, setAddError] = useState(false);
-  const [undoToken, setUndoToken] = useState<string>();
+  const [undoNotice, setUndoNotice] = useState<UndoNotice>();
   const entryRevision = useRef(0);
   const shoppingListRevision = useRef(shoppingList.revision);
   const text = translations[locale];
@@ -112,10 +130,10 @@ function App() {
   }, [applyShoppingListSnapshot]);
 
   useEffect(() => {
-    if (!undoToken) return;
-    const timeout = window.setTimeout(() => setUndoToken(undefined), 6_000);
+    if (!undoNotice) return;
+    const timeout = window.setTimeout(() => setUndoNotice(undefined), 6_000);
     return () => window.clearTimeout(timeout);
-  }, [undoToken]);
+  }, [undoNotice]);
 
   async function changeLocale(nextLocale: Locale) {
     const response = await fetch("api/preferences/locale", {
@@ -161,7 +179,8 @@ function App() {
         return;
       }
       const updated = await response.json() as ShoppingListMutation;
-      if (applyShoppingListSnapshot(updated)) setUndoToken(updated.undoToken);
+      applyShoppingListSnapshot(updated);
+      setUndoNotice({ kind: "quick-entry", token: updated.undoToken });
       if (entryRevision.current === submittedEntryRevision) {
         setEntry("");
         setSelectedProductId(undefined);
@@ -180,7 +199,7 @@ function App() {
       });
       if (!response.ok) return false;
       applyShoppingListSnapshot(await response.json() as ShoppingListSnapshot);
-      setUndoToken(undefined);
+      setUndoNotice(undefined);
       return true;
     } catch {
       return false;
@@ -188,19 +207,66 @@ function App() {
   }
 
   async function undoQuickEntry() {
-    if (!undoToken) return;
+    if (undoNotice?.kind !== "quick-entry") return;
     try {
       const response = await fetch("api/shopping-list/quick-entry/undo", {
-        body: JSON.stringify({ token: undoToken }),
+        body: JSON.stringify({ token: undoNotice.token }),
         headers: { "content-type": "application/json" },
         method: "POST",
       });
       if (!response.ok) return;
       applyShoppingListSnapshot(await response.json() as ShoppingListSnapshot);
-      setUndoToken(undefined);
+      setUndoNotice(undefined);
     } catch {
       // The action expires unobtrusively; live updates still keep the list current.
     }
+  }
+
+  async function toggleCompletion(itemId: number, completed: boolean) {
+    const response = await fetch(`api/shopping-list/items/${itemId}/completion`, {
+      body: JSON.stringify({ completed }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    });
+    if (!response.ok) return;
+    applyShoppingListSnapshot(await response.json() as ShoppingListSnapshot);
+    setUndoNotice(undefined);
+  }
+
+  async function clearCompleted() {
+    const response = await fetch("api/shopping-list/completed/clear", { method: "POST" });
+    if (!response.ok) return;
+    const updated = await response.json() as ShoppingListMutation;
+    applyShoppingListSnapshot(updated);
+    setUndoNotice({ kind: "clear-completed", token: updated.undoToken });
+  }
+
+  async function undoClearCompleted() {
+    if (undoNotice?.kind !== "clear-completed") return;
+    const response = await fetch("api/shopping-list/completed/undo-clear", {
+      body: JSON.stringify({ token: undoNotice.token }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    });
+    if (!response.ok) return;
+    applyShoppingListSnapshot(await response.json() as ShoppingListSnapshot);
+    setUndoNotice(undefined);
+  }
+
+  async function startNewTrip() {
+    if (!window.confirm(text.newTripWarning)) return;
+    const response = await fetch("api/shopping-list/trips/new", { method: "POST" });
+    if (!response.ok) return;
+    applyShoppingListSnapshot(await response.json() as ShoppingListSnapshot);
+    setUndoNotice(undefined);
+  }
+
+  function undoLastAction() {
+    if (undoNotice?.kind === "quick-entry") {
+      void undoQuickEntry();
+      return;
+    }
+    if (undoNotice?.kind === "clear-completed") void undoClearCompleted();
   }
 
   return (
@@ -232,6 +298,12 @@ function App() {
           products={shoppingList.products}
         />
         {addError ? <p className="error" role="alert">{text.addItemFailed}</p> : null}
+        <div className="trip-actions">
+          <button onClick={() => void startNewTrip()} type="button">{text.newTrip}</button>
+          {shoppingList.items.some((item) => item.state.kind === "completed") ? (
+            <button onClick={() => void clearCompleted()} type="button">{text.clearCompleted}</button>
+          ) : null}
+        </div>
         {shoppingList.items.length === 0 ? (
           <div className="empty-state" aria-labelledby="empty-title">
             <div className="cart" aria-hidden="true">🛒</div>
@@ -239,13 +311,18 @@ function App() {
             <p>{text.emptyDescription}</p>
           </div>
         ) : (
-          <ShoppingListView labels={text} onSave={saveItem} shoppingList={shoppingList} />
+          <ShoppingListView
+            labels={text}
+            onSave={saveItem}
+            onToggleCompletion={(itemId, completed) => void toggleCompletion(itemId, completed)}
+            shoppingList={shoppingList}
+          />
         )}
       </section>
-      {undoToken ? (
+      {undoNotice ? (
         <div className="undo-notification" role="status">
-          <span>{text.itemAdded}</span>
-          <button onClick={() => void undoQuickEntry()} type="button">{text.undo}</button>
+          <span>{undoNotice.kind === "quick-entry" ? text.itemAdded : text.itemsCleared}</span>
+          <button onClick={undoLastAction} type="button">{text.undo}</button>
         </div>
       ) : null}
     </main>

@@ -44,9 +44,13 @@ export class ShoppingListStore implements QuickEntryRepository {
           )
         : { created: resolvedProduct.created, packageOption: this.#getDefaultPackageOption(resolvedProduct.product.id) };
       this.#database.prepare(`
-        INSERT INTO shopping_items (product_id, package_option_id, quantity)
-        VALUES (?, ?, ?)
-        ON CONFLICT (product_id, package_option_id)
+        INSERT INTO shopping_items
+          (product_id, package_option_id, quantity, state, active_position)
+        VALUES (
+          ?, ?, ?, 'active',
+          (SELECT COALESCE(MAX(active_position), 0) + 1 FROM shopping_items)
+        )
+        ON CONFLICT (product_id, package_option_id) WHERE state = 'active'
         DO UPDATE SET quantity = quantity + excluded.quantity
       `).run(resolvedProduct.product.id, resolvedOption.packageOption.id, entry.quantity);
       undoToken = randomUUID();
@@ -78,18 +82,38 @@ export class ShoppingListStore implements QuickEntryRepository {
     const products = this.#getProducts();
     const productById = new Map(products.map((product) => [product.id, product]));
     const items = this.#database.prepare(`
-      SELECT id, product_id, package_option_id, quantity FROM shopping_items ORDER BY id
+      SELECT id, product_id, package_option_id, quantity, state, active_position, completed_at
+      FROM shopping_items
+      WHERE state != 'cleared'
+      ORDER BY
+        CASE state WHEN 'active' THEN 0 ELSE 1 END,
+        CASE state WHEN 'active' THEN active_position END,
+        completed_at DESC,
+        id DESC
     `).all().map((row) => {
-      const item = row as { id: number; package_option_id: number; product_id: number; quantity: number };
+      const item = row as {
+        active_position: number;
+        completed_at: number | null;
+        id: number;
+        package_option_id: number;
+        product_id: number;
+        quantity: number;
+        state: "active" | "completed";
+      };
       const product = productById.get(item.product_id);
       const packageOption = product?.packageOptions.find((option) => option.id === item.package_option_id);
       if (!product || !packageOption) throw new Error("Shopping Item references missing catalog data");
-      return {
+      const base = {
         id: item.id,
         packageOption,
         product: { id: product.id, name: product.name },
         quantity: item.quantity,
-      } satisfies ShoppingListItem;
+      };
+      if (item.state === "active") {
+        return { ...base, state: { kind: "active", position: item.active_position } } satisfies ShoppingListItem;
+      }
+      if (item.completed_at === null) throw new Error("Completed Shopping Item has no completion time");
+      return { ...base, state: { completedAt: item.completed_at, kind: "completed" } } satisfies ShoppingListItem;
     });
     const state = this.#database.prepare("SELECT revision FROM shopping_list_state WHERE id = 1").get() as { revision: number };
     return { items, products, revision: state.revision };
@@ -99,9 +123,10 @@ export class ShoppingListStore implements QuickEntryRepository {
     this.#database.exec("BEGIN IMMEDIATE");
     try {
       const current = this.#database.prepare(`
-        SELECT id, product_id, package_option_id FROM shopping_items WHERE id = ?
-      `).get(edit.itemId) as { id: number; package_option_id: number; product_id: number } | undefined;
+        SELECT id, product_id, package_option_id, state FROM shopping_items WHERE id = ?
+      `).get(edit.itemId) as { id: number; package_option_id: number; product_id: number; state: string } | undefined;
       if (!current) throw new ShoppingListCommandError("Shopping Item does not exist");
+      if (current.state !== "active") throw new ShoppingListCommandError("Only active Shopping Items can be edited");
       const resolvedProduct = this.#resolveEditedProduct(current.product_id, edit.productName, edit.productId);
       const desiredOption = {
         measurementDimension: measurementDimensionFor(edit.packageUnit),
@@ -109,7 +134,7 @@ export class ShoppingListStore implements QuickEntryRepository {
         unit: edit.packageUnit,
       };
       const targetOption = current.product_id === resolvedProduct.product.id
-        ? this.#editCurrentPackageOption(current.package_option_id, desiredOption)
+        ? this.#editCurrentPackageOption(edit.itemId, current.package_option_id, desiredOption)
         : this.#findOrCreateExplicitPackageOption(
             resolvedProduct.product.id,
             desiredOption,
@@ -124,9 +149,13 @@ export class ShoppingListStore implements QuickEntryRepository {
       } else {
         this.#database.prepare("DELETE FROM shopping_items WHERE id = ?").run(edit.itemId);
         this.#database.prepare(`
-          INSERT INTO shopping_items (product_id, package_option_id, quantity)
-          VALUES (?, ?, ?)
-          ON CONFLICT (product_id, package_option_id)
+          INSERT INTO shopping_items
+            (product_id, package_option_id, quantity, state, active_position)
+          VALUES (
+            ?, ?, ?, 'active',
+            (SELECT COALESCE(MAX(active_position), 0) + 1 FROM shopping_items)
+          )
+          ON CONFLICT (product_id, package_option_id) WHERE state = 'active'
           DO UPDATE SET quantity = quantity + excluded.quantity
         `).run(resolvedProduct.product.id, targetOption.id, edit.quantity);
         this.#database.prepare(`
@@ -134,6 +163,114 @@ export class ShoppingListStore implements QuickEntryRepository {
           AND NOT EXISTS (SELECT 1 FROM shopping_items WHERE package_option_id = ?)
         `).run(current.package_option_id, current.package_option_id);
       }
+      this.#incrementRevision();
+      this.#database.exec("COMMIT");
+    } catch (error) {
+      this.#database.exec("ROLLBACK");
+      throw error;
+    }
+    return this.getSnapshot();
+  }
+
+  setItemCompletion(itemId: number, completed: boolean): ShoppingListSnapshot {
+    this.#database.exec("BEGIN IMMEDIATE");
+    try {
+      const item = this.#database.prepare(`
+        SELECT product_id, package_option_id, state FROM shopping_items WHERE id = ?
+      `).get(itemId) as
+        | { package_option_id: number; product_id: number; state: "active" | "cleared" | "completed" }
+        | undefined;
+      if (!item) throw new ShoppingListCommandError("Shopping Item does not exist");
+      if (item.state === "cleared") throw new ShoppingListCommandError("Cleared Shopping Item cannot be changed");
+      const desiredState = completed ? "completed" : "active";
+      if (item.state !== desiredState) {
+        if (completed) {
+          this.#database.prepare(`
+            UPDATE shopping_items SET state = 'completed', completed_at = ? WHERE id = ?
+          `).run(Date.now(), itemId);
+        } else {
+          const duplicate = this.#database.prepare(`
+            SELECT id, quantity FROM shopping_items
+            WHERE product_id = ? AND package_option_id = ? AND state = 'active'
+          `).get(item.product_id, item.package_option_id) as { id: number; quantity: number } | undefined;
+          if (duplicate) {
+            this.#database.prepare(`
+              UPDATE shopping_items
+              SET quantity = quantity + (SELECT quantity FROM shopping_items WHERE id = ?)
+              WHERE id = ?
+            `).run(duplicate.id, itemId);
+            this.#database.prepare("DELETE FROM shopping_items WHERE id = ?").run(duplicate.id);
+          }
+          this.#database.prepare(`
+            UPDATE shopping_items SET state = 'active', completed_at = NULL WHERE id = ?
+          `).run(itemId);
+        }
+        this.#database.prepare("DELETE FROM quick_entry_undo WHERE product_id = (SELECT product_id FROM shopping_items WHERE id = ?)")
+          .run(itemId);
+        this.#incrementRevision();
+      }
+      this.#database.exec("COMMIT");
+    } catch (error) {
+      this.#database.exec("ROLLBACK");
+      throw error;
+    }
+    return this.getSnapshot();
+  }
+
+  clearCompleted(): ShoppingListMutation {
+    let undoToken: string;
+    this.#database.exec("BEGIN IMMEDIATE");
+    try {
+      const completed = this.#database.prepare("SELECT 1 FROM shopping_items WHERE state = 'completed' LIMIT 1").get();
+      if (!completed) throw new ShoppingListCommandError("There are no completed Shopping Items to clear");
+      this.#database.prepare("DELETE FROM clear_completed_undo WHERE created_at < ?").run(Date.now() - 60_000);
+      undoToken = randomUUID();
+      this.#database.prepare("INSERT INTO clear_completed_undo (token, created_at) VALUES (?, ?)")
+        .run(undoToken, Date.now());
+      this.#database.prepare(`
+        UPDATE shopping_items SET state = 'cleared', clear_undo_token = ? WHERE state = 'completed'
+      `).run(undoToken);
+      this.#incrementRevision();
+      this.#database.exec("COMMIT");
+    } catch (error) {
+      this.#database.exec("ROLLBACK");
+      throw error;
+    }
+    return { ...this.getSnapshot(), undoToken };
+  }
+
+  undoClearCompleted(token: string): ShoppingListSnapshot {
+    this.#database.exec("BEGIN IMMEDIATE");
+    try {
+      const undo = this.#database.prepare("SELECT created_at FROM clear_completed_undo WHERE token = ?").get(token) as
+        | { created_at: number }
+        | undefined;
+      if (!undo || Date.now() - undo.created_at > 60_000) {
+        throw new ShoppingListCommandError("Cleared Shopping Items can no longer be restored");
+      }
+      this.#database.prepare(`
+        UPDATE shopping_items
+        SET state = 'completed', clear_undo_token = NULL
+        WHERE state = 'cleared' AND clear_undo_token = ?
+      `).run(token);
+      this.#database.prepare("DELETE FROM clear_completed_undo WHERE token = ?").run(token);
+      this.#incrementRevision();
+      this.#database.exec("COMMIT");
+    } catch (error) {
+      this.#database.exec("ROLLBACK");
+      throw error;
+    }
+    return this.getSnapshot();
+  }
+
+  startNewTrip(): ShoppingListSnapshot {
+    this.#database.exec("BEGIN IMMEDIATE");
+    try {
+      this.#database.exec(`
+        DELETE FROM quick_entry_undo;
+        DELETE FROM clear_completed_undo;
+        DELETE FROM shopping_items;
+      `);
       this.#incrementRevision();
       this.#database.exec("COMMIT");
     } catch (error) {
@@ -162,7 +299,8 @@ export class ShoppingListStore implements QuickEntryRepository {
       }
       this.#database.prepare("DELETE FROM quick_entry_undo WHERE token = ?").run(token);
       const item = this.#database.prepare(`
-        SELECT id, quantity FROM shopping_items WHERE product_id = ? AND package_option_id = ?
+        SELECT id, quantity FROM shopping_items
+        WHERE product_id = ? AND package_option_id = ? AND state = 'active'
       `).get(undo.product_id, undo.package_option_id) as { id: number; quantity: number } | undefined;
       if (item) {
         if (item.quantity <= undo.quantity_added) {
@@ -277,6 +415,7 @@ export class ShoppingListStore implements QuickEntryRepository {
   }
 
   #editCurrentPackageOption(
+    shoppingItemId: number,
     packageOptionId: number,
     desired: NonNullable<ParsedQuickEntry["packageOption"]>,
   ): PackageOptionRow {
@@ -292,6 +431,26 @@ export class ShoppingListStore implements QuickEntryRepository {
         this.#database.prepare("UPDATE package_options SET is_default = 1 WHERE id = ?").run(existing.id);
       }
       return existing;
+    }
+    const usedByAnotherItem = this.#database.prepare(`
+      SELECT 1 FROM shopping_items WHERE package_option_id = ? AND id != ? LIMIT 1
+    `).get(packageOptionId, shoppingItemId) !== undefined;
+    if (usedByAnotherItem) {
+      if (current.is_default === 1) {
+        this.#database.prepare("UPDATE package_options SET is_default = 0 WHERE id = ?").run(current.id);
+      }
+      const result = this.#database.prepare(`
+        INSERT INTO package_options
+          (product_id, size, unit, measurement_dimension, is_default, archived)
+        VALUES (?, ?, ?, ?, ?, 0)
+      `).run(
+        current.product_id,
+        desired.size,
+        desired.unit,
+        desired.measurementDimension,
+        current.is_default,
+      );
+      return this.#getPackageOption(Number(result.lastInsertRowid));
     }
     this.#database.prepare(`
       UPDATE package_options SET size = ?, unit = ?, measurement_dimension = ? WHERE id = ?
