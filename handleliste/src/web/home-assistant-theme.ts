@@ -1,4 +1,7 @@
 const HOME_ASSISTANT_THEME_VARIABLES = [
+  "--card-background-color",
+  "--divider-color",
+  "--error-color",
   "--primary-background-color",
   "--primary-color",
   "--primary-text-color",
