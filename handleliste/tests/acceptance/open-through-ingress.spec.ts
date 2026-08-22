@@ -11,7 +11,7 @@ test("opens through Home Assistant Ingress as the authenticated user", async ({ 
   try {
     await page.goto(homeAssistant.ingressUrl);
 
-    await expect(page.getByRole("heading", { name: "Handleliste" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Handleliste", exact: true })).toBeVisible();
     await expect(page.getByText("Frida Handlekurv")).toBeVisible();
   } finally {
     await system.close();
@@ -25,7 +25,7 @@ test("persists the Home Assistant user's language across an App restart", async 
   try {
     await page.goto(homeAssistant.ingressUrl);
     await page.getByRole("combobox", { name: "Language" }).selectOption("nb");
-    await expect(page.getByRole("heading", { name: "Handleliste" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Handleliste", exact: true })).toBeVisible();
     await expect(page.getByText("Handlelisten din er klar")).toBeVisible();
 
     await system.restart();

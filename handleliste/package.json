@@ -8,10 +8,13 @@
   },
   "scripts": {
     "build": "npm run build:web && npm run build:server",
+    "build:dev": "tsc -p tsconfig.dev.json",
     "build:server": "tsc -p tsconfig.server.json",
     "build:web": "vite build",
+    "predev": "npm run build:web",
     "pretest": "npm run build:web",
     "pretest:acceptance": "npm run build:web",
+    "dev": "npm run build:dev && node dist/dev/src/dev/index.js",
     "start": "node dist/server/index.js",
     "test": "playwright test",
     "test:acceptance": "playwright test tests/acceptance",
