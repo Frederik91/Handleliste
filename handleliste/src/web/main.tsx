@@ -1,15 +1,19 @@
 import { StrictMode, useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import type { PackageUnit, ShoppingListSnapshot } from "../shared/shopping-list.js";
+import { normalizeProductName } from "../shared/product-name.js";
+import type {
+  Product,
+  ShoppingItemEdit,
+  ShoppingListMutation,
+  ShoppingListSnapshot,
+} from "../shared/shopping-list.js";
 import { followHomeAssistantTheme } from "./home-assistant-theme.js";
+import { QuickEntryForm } from "./quick-entry-form.js";
+import { ShoppingListView } from "./shopping-list-view.js";
 import "./styles.css";
 
 interface BootstrapData {
-  identity: {
-    displayName: string;
-    id: string;
-    name: string;
-  };
+  identity: { displayName: string; id: string; name: string };
   locale: Locale;
   shoppingList: ShoppingListSnapshot;
 }
@@ -21,19 +25,39 @@ const translations = {
     add: "Add",
     addItem: "Add item",
     addItemFailed: "Could not add the item. Try again.",
+    cancel: "Cancel",
+    edit: "Edit",
+    editItemFailed: "Could not save the item. Try again.",
     emptyDescription: "Items you add will appear here.",
     emptyTitle: "Your shopping list is ready",
+    itemAdded: "Item added",
     language: "Language",
+    packageSize: "Package size",
+    product: "Product",
+    quantity: "Quantity",
+    save: "Save",
+    undo: "Undo",
     unit: "unit",
+    unitLabel: "Unit",
   },
   nb: {
     add: "Legg til",
     addItem: "Legg til vare",
     addItemFailed: "Kunne ikke legge til varen. Prøv igjen.",
+    cancel: "Avbryt",
+    edit: "Rediger",
+    editItemFailed: "Kunne ikke lagre varen. Prøv igjen.",
     emptyDescription: "Varer du legger til, vises her.",
     emptyTitle: "Handlelisten din er klar",
+    itemAdded: "Vare lagt til",
     language: "Språk",
+    packageSize: "Pakningsstørrelse",
+    product: "Produkt",
+    quantity: "Antall",
+    save: "Lagre",
+    undo: "Angre",
     unit: "enhet",
+    unitLabel: "Enhet",
   },
 } satisfies Record<Locale, Record<string, string>>;
 
@@ -48,11 +72,18 @@ function App() {
   const [locale, setLocale] = useState(window.__HANDLELISTE_BOOTSTRAP__.locale);
   const [shoppingList, setShoppingList] = useState(window.__HANDLELISTE_BOOTSTRAP__.shoppingList);
   const [entry, setEntry] = useState("");
-  const entryRevision = useRef(0);
+  const [selectedProductId, setSelectedProductId] = useState<number>();
   const [addError, setAddError] = useState(false);
+  const [undoToken, setUndoToken] = useState<string>();
+  const entryRevision = useRef(0);
+  const shoppingListRevision = useRef(shoppingList.revision);
   const text = translations[locale];
+
   const applyShoppingListSnapshot = useCallback((updated: ShoppingListSnapshot) => {
-    setShoppingList((current) => updated.revision >= current.revision ? updated : current);
+    if (updated.revision < shoppingListRevision.current) return false;
+    shoppingListRevision.current = updated.revision;
+    setShoppingList(updated);
+    return true;
   }, []);
 
   useEffect(() => {
@@ -64,13 +95,9 @@ function App() {
     const refreshShoppingList = async () => {
       try {
         const response = await fetch("api/shopping-list");
-        if (!response.ok || !active) {
-          return;
-        }
+        if (!response.ok || !active) return;
         const updated = await response.json() as ShoppingListSnapshot;
-        if (active) {
-          applyShoppingListSnapshot(updated);
-        }
+        if (active) applyShoppingListSnapshot(updated);
       } catch {
         // EventSource reconnects automatically; the next ready event refreshes the list.
       }
@@ -78,12 +105,17 @@ function App() {
     const events = new EventSource("api/shopping-list/events");
     events.addEventListener("ready", () => void refreshShoppingList());
     events.addEventListener("changed", () => void refreshShoppingList());
-
     return () => {
       active = false;
       events.close();
     };
   }, [applyShoppingListSnapshot]);
+
+  useEffect(() => {
+    if (!undoToken) return;
+    const timeout = window.setTimeout(() => setUndoToken(undefined), 6_000);
+    return () => window.clearTimeout(timeout);
+  }, [undoToken]);
 
   async function changeLocale(nextLocale: Locale) {
     const response = await fetch("api/preferences/locale", {
@@ -91,23 +123,36 @@ function App() {
       headers: { "content-type": "application/json" },
       method: "POST",
     });
-    if (!response.ok) {
-      throw new Error("Could not save language preference");
-    }
+    if (!response.ok) throw new Error("Could not save language preference");
     setLocale(nextLocale);
+  }
+
+  function changeEntry(value: string) {
+    entryRevision.current += 1;
+    setEntry(value);
+    const selectedProduct = shoppingList.products.find((product) => product.id === selectedProductId);
+    const normalizedEntry = normalizeProductName(value);
+    const normalizedSelectedName = selectedProduct && normalizeProductName(selectedProduct.name);
+    if (!normalizedSelectedName || (normalizedEntry !== normalizedSelectedName && !normalizedEntry.startsWith(`${normalizedSelectedName} `))) {
+      setSelectedProductId(undefined);
+    }
+  }
+
+  function selectProduct(product: Product) {
+    entryRevision.current += 1;
+    setEntry(product.name);
+    setSelectedProductId(product.id);
   }
 
   async function addItem(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!entry.trim()) {
-      return;
-    }
+    if (!entry.trim()) return;
     const submittedEntry = entry;
     const submittedEntryRevision = entryRevision.current;
     setAddError(false);
     try {
       const response = await fetch("api/shopping-list/items", {
-        body: JSON.stringify({ entry: submittedEntry }),
+        body: JSON.stringify({ entry: submittedEntry, productId: selectedProductId }),
         headers: { "content-type": "application/json" },
         method: "POST",
       });
@@ -115,13 +160,46 @@ function App() {
         setAddError(true);
         return;
       }
-      const updated = await response.json() as ShoppingListSnapshot;
-      applyShoppingListSnapshot(updated);
+      const updated = await response.json() as ShoppingListMutation;
+      if (applyShoppingListSnapshot(updated)) setUndoToken(updated.undoToken);
       if (entryRevision.current === submittedEntryRevision) {
         setEntry("");
+        setSelectedProductId(undefined);
       }
     } catch {
       setAddError(true);
+    }
+  }
+
+  async function saveItem(edit: ShoppingItemEdit): Promise<boolean> {
+    try {
+      const response = await fetch(`api/shopping-list/items/${edit.itemId}`, {
+        body: JSON.stringify(edit),
+        headers: { "content-type": "application/json" },
+        method: "PATCH",
+      });
+      if (!response.ok) return false;
+      applyShoppingListSnapshot(await response.json() as ShoppingListSnapshot);
+      setUndoToken(undefined);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function undoQuickEntry() {
+    if (!undoToken) return;
+    try {
+      const response = await fetch("api/shopping-list/quick-entry/undo", {
+        body: JSON.stringify({ token: undoToken }),
+        headers: { "content-type": "application/json" },
+        method: "POST",
+      });
+      if (!response.ok) return;
+      applyShoppingListSnapshot(await response.json() as ShoppingListSnapshot);
+      setUndoToken(undefined);
+    } catch {
+      // The action expires unobtrusively; live updates still keep the list current.
     }
   }
 
@@ -144,21 +222,15 @@ function App() {
         </div>
       </header>
       <section className="shopping-list-content">
-        <form className="quick-entry" onSubmit={(event) => void addItem(event)}>
-          <label className="visually-hidden" htmlFor="quick-entry">{text.addItem}</label>
-          <input
-            aria-label={text.addItem}
-            autoComplete="off"
-            id="quick-entry"
-            onChange={(event) => {
-              entryRevision.current += 1;
-              setEntry(event.target.value);
-            }}
-            placeholder={text.addItem}
-            value={entry}
-          />
-          <button type="submit">{text.add}</button>
-        </form>
+        <QuickEntryForm
+          addLabel={text.add}
+          entry={entry}
+          inputLabel={text.addItem}
+          onChange={changeEntry}
+          onSelect={selectProduct}
+          onSubmit={(event) => void addItem(event)}
+          products={shoppingList.products}
+        />
         {addError ? <p className="error" role="alert">{text.addItemFailed}</p> : null}
         {shoppingList.items.length === 0 ? (
           <div className="empty-state" aria-labelledby="empty-title">
@@ -167,26 +239,21 @@ function App() {
             <p>{text.emptyDescription}</p>
           </div>
         ) : (
-          <ul className="shopping-list" aria-live="polite">
-            {shoppingList.items.map((item) => (
-              <li className="shopping-item" key={item.id}>
-                <strong>{item.product.name}</strong>
-                <span>
-                  {item.quantity} × {formatSize(item.packageOption.size)} {formatUnit(item.packageOption.unit, text.unit)}
-                </span>
-              </li>
-            ))}
-          </ul>
+          <ShoppingListView labels={text} onSave={saveItem} shoppingList={shoppingList} />
         )}
       </section>
+      {undoToken ? (
+        <div className="undo-notification" role="status">
+          <span>{text.itemAdded}</span>
+          <button onClick={() => void undoQuickEntry()} type="button">{text.undo}</button>
+        </div>
+      ) : null}
     </main>
   );
 }
 
 const root = document.getElementById("root");
-if (!root) {
-  throw new Error("Handleliste root element is missing");
-}
+if (!root) throw new Error("Handleliste root element is missing");
 
 followHomeAssistantTheme();
 createRoot(root).render(
@@ -194,11 +261,3 @@ createRoot(root).render(
     <App />
   </StrictMode>,
 );
-
-function formatSize(size: number): string {
-  return Number.isInteger(size) ? size.toFixed(0) : String(size);
-}
-
-function formatUnit(unit: PackageUnit, translatedUnit: string): string {
-  return unit === "unit" ? translatedUnit : unit satisfies never;
-}
