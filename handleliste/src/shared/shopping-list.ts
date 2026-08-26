@@ -16,12 +16,17 @@ export interface Product {
   packageOptions: PackageOption[];
 }
 
-export interface ShoppingListItem {
+interface ShoppingListItemBase {
   id: number;
   packageOption: PackageOption;
   product: Pick<Product, "id" | "name">;
   quantity: number;
 }
+
+export type ShoppingListItem = ShoppingListItemBase & (
+  | { state: { kind: "active"; position: number } }
+  | { state: { completedAt: number; kind: "completed" } }
+);
 
 export interface ShoppingListSnapshot {
   items: ShoppingListItem[];
@@ -30,7 +35,7 @@ export interface ShoppingListSnapshot {
 }
 
 export interface ShoppingListMutation extends ShoppingListSnapshot {
-  undoToken?: string;
+  undoToken: string;
 }
 
 export interface ShoppingItemEdit {

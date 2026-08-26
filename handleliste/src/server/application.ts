@@ -136,6 +136,45 @@ async function handleRequest(
       return;
     }
 
+    if (pathname === "/api/shopping-list/completed/clear" && request.method === "POST") {
+      const snapshot = context.shoppingList.clearCompleted();
+      context.shoppingListEvents.publishChanged();
+      sendJson(response, 200, snapshot);
+      return;
+    }
+
+    if (pathname === "/api/shopping-list/completed/undo-clear" && request.method === "POST") {
+      const body = await readJson(request);
+      if (typeof body.token !== "string" || body.token.trim() === "") {
+        sendJson(response, 400, { error: "Undo token is required" });
+        return;
+      }
+      const snapshot = context.shoppingList.undoClearCompleted(body.token);
+      context.shoppingListEvents.publishChanged();
+      sendJson(response, 200, snapshot);
+      return;
+    }
+
+    if (pathname === "/api/shopping-list/trips/new" && request.method === "POST") {
+      const snapshot = context.shoppingList.startNewTrip();
+      context.shoppingListEvents.publishChanged();
+      sendJson(response, 200, snapshot);
+      return;
+    }
+
+    const completionMatch = pathname.match(/^\/api\/shopping-list\/items\/(\d+)\/completion$/);
+    if (completionMatch && request.method === "POST") {
+      const body = await readJson(request);
+      if (typeof body.completed !== "boolean") {
+        sendJson(response, 400, { error: "Completed must be true or false" });
+        return;
+      }
+      const snapshot = context.shoppingList.setItemCompletion(Number(completionMatch[1]), body.completed);
+      context.shoppingListEvents.publishChanged();
+      sendJson(response, 200, snapshot);
+      return;
+    }
+
     const shoppingItemMatch = pathname.match(/^\/api\/shopping-list\/items\/(\d+)$/);
     if (shoppingItemMatch && request.method === "PATCH") {
       const body = await readJson(request);
