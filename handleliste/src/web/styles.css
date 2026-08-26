@@ -377,6 +377,18 @@ select {
   white-space: nowrap;
 }
 
+.shopping-item-product {
+  min-width: 0;
+  flex: 1;
+}
+
+.shopping-item-details {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-left: auto;
+}
+
 .complete-item {
   width: 1.2rem;
   height: 1.2rem;
@@ -395,12 +407,18 @@ select {
 }
 
 .edit-item {
-  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
   border: 1px solid var(--divider-color, #bdbdbd);
   border-radius: 0.3rem;
-  padding: 0.35rem 0.6rem;
+  padding: 0;
   color: var(--primary-text-color, #212121);
   background: transparent;
+  font-size: 1.25rem;
+  line-height: 1;
   cursor: pointer;
 }
 

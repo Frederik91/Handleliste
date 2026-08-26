@@ -32,6 +32,41 @@ test("adds a bare Quick Entry immediately and increments its implicit 1 unit opt
   }
 });
 
+test("orders active Shopping Item rows and exposes an icon-only edit control", async ({ page }) => {
+  const system = await startHandlelisteTestSystem();
+  const homeAssistant = await system.addHomeAssistant();
+
+  try {
+    await page.goto(homeAssistant.ingressUrl);
+    const quickEntry = page.getByRole("combobox", { name: "Add item" });
+    await quickEntry.fill("Milk 1L");
+    await quickEntry.press("Enter");
+
+    const row = page.getByRole("group", { name: "Milk" }).getByRole("listitem");
+    const rowChildren = row.locator(":scope > *");
+    await expect(rowChildren.nth(0)).toHaveAttribute("type", "checkbox");
+    await expect(rowChildren.nth(1)).toBeVisible();
+    await expect(rowChildren.nth(1)).toHaveText("Milk");
+
+    const details = rowChildren.nth(2);
+    const detailsChildren = details.locator(":scope > *");
+    await expect(detailsChildren.nth(0)).toHaveText("1 × 1 L");
+    const editButton = details.getByRole("button", { name: "Edit" });
+    await expect(detailsChildren.nth(1)).toHaveRole("button");
+    await expect(editButton).toBeVisible();
+    await expect(editButton).toHaveAccessibleName("Edit");
+    await expect(editButton).toHaveText("✎");
+
+    await page.getByRole("combobox", { name: "Language" }).selectOption("nb");
+    const localizedEditButton = row.getByRole("button", { name: "Rediger" });
+    await expect(localizedEditButton).toBeVisible();
+    await expect(localizedEditButton).toHaveAccessibleName("Rediger");
+    await expect(localizedEditButton).toHaveText("✎");
+  } finally {
+    await system.close();
+  }
+});
+
 test("parses package counts and sizes while keeping different Package Options distinct", async ({ page }) => {
   const system = await startHandlelisteTestSystem();
   const homeAssistant = await system.addHomeAssistant();

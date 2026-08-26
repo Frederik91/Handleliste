@@ -59,7 +59,6 @@ export function ShoppingListView({
           <ul>
             {items.map((item) => (
               <li className="shopping-item" key={item.id}>
-                <strong className="visually-hidden">{product.name}</strong>
                 {editingItemId === item.id ? (
                   <ShoppingItemEditor
                     editError={editError}
@@ -78,19 +77,23 @@ export function ShoppingListView({
                       onChange={() => onToggleCompletion(item.id, true)}
                       type="checkbox"
                     />
-                    <span>
-                      {item.quantity} × {formatSize(item.packageOption.size)} {formatUnit(item.packageOption.unit, labels.unit)}
-                    </span>
-                    <button
-                      className="edit-item"
-                      onClick={() => {
-                        setEditError(false);
-                        setEditingItemId(item.id);
-                      }}
-                      type="button"
-                    >
-                      {labels.edit}
-                    </button>
+                    <strong className="shopping-item-product">{product.name}</strong>
+                    <div className="shopping-item-details">
+                      <span>
+                        {item.quantity} × {formatSize(item.packageOption.size)} {formatUnit(item.packageOption.unit, labels.unit)}
+                      </span>
+                      <button
+                        aria-label={labels.edit}
+                        className="edit-item"
+                        onClick={() => {
+                          setEditError(false);
+                          setEditingItemId(item.id);
+                        }}
+                        type="button"
+                      >
+                        <span aria-hidden="true">✎</span>
+                      </button>
+                    </div>
                   </>
                 )}
               </li>
