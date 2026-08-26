@@ -6,7 +6,19 @@ import type { ParsedQuickEntry, QuickEntryRepository } from "../domain/quick-ent
 import { measurementDimensionFor } from "../shared/package-option.js";
 import { normalizeProductName } from "../shared/product-name.js";
 import { prepareShoppingListSchema } from "./shopping-list-schema.js";
-import type { MeasurementDimension, PackageUnit, Product, ShoppingItemEdit, ShoppingListItem, ShoppingListMutation, ShoppingListSnapshot } from "../shared/shopping-list.js";
+import type {
+  AlwaysInStockDefinition,
+  AlwaysInStockDefinitionInput,
+  AlwaysInStockSelection,
+  AlwaysInStockSelectionInput,
+  MeasurementDimension,
+  PackageUnit,
+  Product,
+  ShoppingItemEdit,
+  ShoppingListItem,
+  ShoppingListMutation,
+  ShoppingListSnapshot,
+} from "../shared/shopping-list.js";
 
 interface ProductRow { id: number; name: string }
 interface PackageOptionRow {
@@ -16,6 +28,14 @@ interface PackageOptionRow {
   product_id: number;
   size: number;
   unit: PackageUnit;
+}
+interface AlwaysInStockDefinitionRow {
+  archived: number;
+  default_quantity: number;
+  id: number;
+  package_option_id: number;
+  position: number;
+  product_id: number;
 }
 
 export class ShoppingListStore implements QuickEntryRepository {
@@ -116,7 +136,159 @@ export class ShoppingListStore implements QuickEntryRepository {
       return { ...base, state: { completedAt: item.completed_at, kind: "completed" } } satisfies ShoppingListItem;
     });
     const state = this.#database.prepare("SELECT revision FROM shopping_list_state WHERE id = 1").get() as { revision: number };
-    return { items, products, revision: state.revision };
+    return {
+      alwaysInStockDefinitions: this.#getAlwaysInStockDefinitions(),
+      alwaysInStockSelections: this.#getAlwaysInStockSelections(),
+      items,
+      products,
+      revision: state.revision,
+    };
+  }
+
+  createAlwaysInStockDefinition(input: AlwaysInStockDefinitionInput): ShoppingListSnapshot {
+    this.#database.exec("BEGIN IMMEDIATE");
+    try {
+      this.#assertPositiveQuantity(input.defaultQuantity);
+      const packageOption = this.#getActivePackageOptionForProduct(input.productId, input.packageOptionId);
+      this.#assertNoActiveAlwaysInStockDefinition(input.productId, packageOption.id);
+      const position = this.#database.prepare(
+        "SELECT COALESCE(MAX(position), 0) + 1 AS position FROM always_in_stock_definitions",
+      ).get() as { position: number };
+      this.#database.prepare(`
+        INSERT INTO always_in_stock_definitions
+          (product_id, package_option_id, default_quantity, position)
+        VALUES (?, ?, ?, ?)
+      `).run(input.productId, input.packageOptionId, input.defaultQuantity, position.position);
+      this.#incrementRevision();
+      this.#database.exec("COMMIT");
+    } catch (error) {
+      this.#database.exec("ROLLBACK");
+      throw error;
+    }
+    return this.getSnapshot();
+  }
+
+  updateAlwaysInStockDefinition(
+    definitionId: number,
+    input: AlwaysInStockDefinitionInput,
+  ): ShoppingListSnapshot {
+    this.#database.exec("BEGIN IMMEDIATE");
+    try {
+      this.#assertPositiveQuantity(input.defaultQuantity);
+      const current = this.#getAlwaysInStockDefinition(definitionId);
+      const packageOption = this.#getActivePackageOptionForProduct(input.productId, input.packageOptionId);
+      this.#assertNoActiveAlwaysInStockDefinition(input.productId, packageOption.id, definitionId);
+      const selection = this.#database.prepare(`
+        SELECT quantity FROM always_in_stock_selections WHERE definition_id = ?
+      `).get(definitionId) as { quantity: number } | undefined;
+      const packageChanged = current.product_id !== input.productId || current.package_option_id !== input.packageOptionId;
+      if (selection && packageChanged) this.#removeAlwaysInStockContribution(definitionId);
+      this.#database.prepare(`
+        UPDATE always_in_stock_definitions
+        SET product_id = ?, package_option_id = ?, default_quantity = ?
+        WHERE id = ?
+      `).run(input.productId, input.packageOptionId, input.defaultQuantity, definitionId);
+      if (selection && packageChanged) this.#addAlwaysInStockContribution(definitionId, selection.quantity);
+      if (current.product_id !== input.productId || current.package_option_id !== input.packageOptionId || current.default_quantity !== input.defaultQuantity) {
+        this.#incrementRevision();
+      }
+      this.#database.exec("COMMIT");
+    } catch (error) {
+      this.#database.exec("ROLLBACK");
+      throw error;
+    }
+    return this.getSnapshot();
+  }
+
+  archiveAlwaysInStockDefinition(definitionId: number, archived: boolean): ShoppingListSnapshot {
+    this.#database.exec("BEGIN IMMEDIATE");
+    try {
+      const current = this.#getAlwaysInStockDefinition(definitionId);
+      if (current.archived === (archived ? 1 : 0)) {
+        this.#database.exec("COMMIT");
+        return this.getSnapshot();
+      }
+      if (archived) {
+        this.#removeAlwaysInStockContribution(definitionId);
+        this.#database.prepare("DELETE FROM always_in_stock_selections WHERE definition_id = ?").run(definitionId);
+      }
+      this.#database.prepare("UPDATE always_in_stock_definitions SET archived = ? WHERE id = ?")
+        .run(archived ? 1 : 0, definitionId);
+      this.#incrementRevision();
+      this.#database.exec("COMMIT");
+    } catch (error) {
+      this.#database.exec("ROLLBACK");
+      throw error;
+    }
+    return this.getSnapshot();
+  }
+
+  reorderAlwaysInStockDefinitions(definitionIds: readonly number[]): ShoppingListSnapshot {
+    this.#database.exec("BEGIN IMMEDIATE");
+    try {
+      const definitions = this.#database.prepare(
+        "SELECT id FROM always_in_stock_definitions ORDER BY position, id",
+      ).all() as Array<{ id: number }>;
+      if (
+        definitionIds.length !== definitions.length
+        || new Set(definitionIds).size !== definitionIds.length
+        || definitions.some((definition) => !definitionIds.includes(definition.id))
+      ) {
+        throw new ShoppingListCommandError("Always in Stock definition order is invalid");
+      }
+      const update = this.#database.prepare("UPDATE always_in_stock_definitions SET position = ? WHERE id = ?");
+      definitionIds.forEach((definitionId, index) => update.run(index + 1, definitionId));
+      this.#incrementRevision();
+      this.#database.exec("COMMIT");
+    } catch (error) {
+      this.#database.exec("ROLLBACK");
+      throw error;
+    }
+    return this.getSnapshot();
+  }
+
+  replaceAlwaysInStockSelections(selections: readonly AlwaysInStockSelectionInput[]): ShoppingListSnapshot {
+    this.#database.exec("BEGIN IMMEDIATE");
+    try {
+      const definitionIds = new Set<number>();
+      for (const selection of selections) {
+        this.#assertPositiveQuantity(selection.quantity);
+        if (definitionIds.has(selection.definitionId)) {
+          throw new ShoppingListCommandError("An Always in Stock definition can only be selected once");
+        }
+        definitionIds.add(selection.definitionId);
+        const definition = this.#getAlwaysInStockDefinition(selection.definitionId);
+        if (definition.archived === 1) throw new ShoppingListCommandError("Archived Always in Stock definitions cannot be selected");
+      }
+      const current = this.#getAlwaysInStockSelections();
+      const currentByDefinition = new Map(current.map((selection) => [selection.definitionId, selection.quantity]));
+      const nextByDefinition = new Map(selections.map((selection) => [selection.definitionId, selection.quantity]));
+      for (const selection of current) {
+        const nextQuantity = nextByDefinition.get(selection.definitionId);
+        if (nextQuantity === undefined) {
+          this.#removeAlwaysInStockContribution(selection.definitionId);
+          this.#database.prepare("DELETE FROM always_in_stock_selections WHERE definition_id = ?")
+            .run(selection.definitionId);
+        } else if (nextQuantity !== selection.quantity) {
+          this.#updateAlwaysInStockContribution(selection.definitionId, nextQuantity);
+          this.#database.prepare("UPDATE always_in_stock_selections SET quantity = ? WHERE definition_id = ?")
+            .run(nextQuantity, selection.definitionId);
+        }
+      }
+      for (const selection of selections) {
+        if (currentByDefinition.has(selection.definitionId)) continue;
+        this.#database.prepare(`
+          INSERT INTO always_in_stock_selections (definition_id, quantity) VALUES (?, ?)
+        `).run(selection.definitionId, selection.quantity);
+        this.#addAlwaysInStockContribution(selection.definitionId, selection.quantity);
+      }
+      this.#incrementRevision();
+      this.#database.exec("COMMIT");
+    } catch (error) {
+      this.#database.exec("ROLLBACK");
+      throw error;
+    }
+    return this.getSnapshot();
   }
 
   updateItem(edit: ShoppingItemEdit): ShoppingListSnapshot {
@@ -161,7 +333,8 @@ export class ShoppingListStore implements QuickEntryRepository {
         this.#database.prepare(`
           DELETE FROM package_options WHERE id = ? AND is_default = 0
           AND NOT EXISTS (SELECT 1 FROM shopping_items WHERE package_option_id = ?)
-        `).run(current.package_option_id, current.package_option_id);
+          AND NOT EXISTS (SELECT 1 FROM always_in_stock_definitions WHERE package_option_id = ?)
+        `).run(current.package_option_id, current.package_option_id, current.package_option_id);
       }
       this.#incrementRevision();
       this.#database.exec("COMMIT");
@@ -269,6 +442,7 @@ export class ShoppingListStore implements QuickEntryRepository {
       this.#database.exec(`
         DELETE FROM quick_entry_undo;
         DELETE FROM clear_completed_undo;
+        DELETE FROM always_in_stock_selections;
         DELETE FROM shopping_items;
       `);
       this.#incrementRevision();
@@ -314,15 +488,22 @@ export class ShoppingListStore implements QuickEntryRepository {
         this.#database.prepare(`
           DELETE FROM package_options WHERE id = ?
           AND NOT EXISTS (SELECT 1 FROM shopping_items WHERE package_option_id = ?)
-        `).run(undo.package_option_id, undo.package_option_id);
+          AND NOT EXISTS (SELECT 1 FROM always_in_stock_definitions WHERE package_option_id = ?)
+        `).run(undo.package_option_id, undo.package_option_id, undo.package_option_id);
       }
       if (undo.created_product === 1) {
         const hasItems = this.#database.prepare("SELECT 1 FROM shopping_items WHERE product_id = ? LIMIT 1")
           .get(undo.product_id);
         if (!hasItems) {
           this.#database.prepare("DELETE FROM quick_entry_undo WHERE product_id = ?").run(undo.product_id);
-          this.#database.prepare("DELETE FROM package_options WHERE product_id = ?").run(undo.product_id);
-          this.#database.prepare("DELETE FROM products WHERE id = ?").run(undo.product_id);
+          this.#database.prepare(`
+            DELETE FROM package_options WHERE product_id = ?
+            AND NOT EXISTS (SELECT 1 FROM always_in_stock_definitions WHERE product_id = ?)
+          `).run(undo.product_id, undo.product_id);
+          this.#database.prepare(`
+            DELETE FROM products WHERE id = ?
+            AND NOT EXISTS (SELECT 1 FROM always_in_stock_definitions WHERE product_id = ?)
+          `).run(undo.product_id, undo.product_id);
         }
       }
       this.#incrementRevision();
@@ -332,6 +513,140 @@ export class ShoppingListStore implements QuickEntryRepository {
       throw error;
     }
     return this.getSnapshot();
+  }
+
+  #getAlwaysInStockDefinitions(): AlwaysInStockDefinition[] {
+    const definitions = this.#database.prepare(`
+      SELECT id, product_id, package_option_id, default_quantity, position, archived
+      FROM always_in_stock_definitions
+      ORDER BY position, id
+    `).all() as unknown as AlwaysInStockDefinitionRow[];
+    return definitions.map((definition) => ({
+      archived: definition.archived === 1,
+      defaultQuantity: definition.default_quantity,
+      id: definition.id,
+      packageOptionId: definition.package_option_id,
+      position: definition.position,
+      productId: definition.product_id,
+    }));
+  }
+
+  #getAlwaysInStockSelections(): AlwaysInStockSelection[] {
+    return this.#database.prepare(`
+      SELECT definition_id, quantity
+      FROM always_in_stock_selections
+      ORDER BY definition_id
+    `).all().map((row) => {
+      const selection = row as { definition_id: number; quantity: number };
+      return { definitionId: selection.definition_id, quantity: selection.quantity };
+    });
+  }
+
+  #getAlwaysInStockDefinition(definitionId: number): AlwaysInStockDefinitionRow {
+    const definition = this.#database.prepare(`
+      SELECT id, product_id, package_option_id, default_quantity, position, archived
+      FROM always_in_stock_definitions WHERE id = ?
+    `).get(definitionId) as AlwaysInStockDefinitionRow | undefined;
+    if (!definition) throw new ShoppingListCommandError("Always in Stock definition does not exist");
+    return definition;
+  }
+
+  #getActivePackageOptionForProduct(productId: number, packageOptionId: number): PackageOptionRow {
+    this.#getProduct(productId);
+    const packageOption = this.#database.prepare(`
+      SELECT id, product_id, size, unit, measurement_dimension, is_default
+      FROM package_options
+      WHERE id = ? AND product_id = ? AND archived = 0
+    `).get(packageOptionId, productId) as PackageOptionRow | undefined;
+    if (!packageOption) throw new ShoppingListCommandError("Package Option does not belong to the selected Product");
+    return packageOption;
+  }
+
+  #assertNoActiveAlwaysInStockDefinition(
+    productId: number,
+    packageOptionId: number,
+    exceptDefinitionId?: number,
+  ): void {
+    const duplicate = this.#database.prepare(`
+      SELECT id FROM always_in_stock_definitions
+      WHERE product_id = ? AND package_option_id = ? AND archived = 0
+        AND (? IS NULL OR id != ?)
+    `).get(productId, packageOptionId, exceptDefinitionId ?? null, exceptDefinitionId ?? null);
+    if (duplicate) throw new ShoppingListCommandError("An active Always in Stock definition already uses this Package Option");
+  }
+
+  #assertPositiveQuantity(quantity: number): void {
+    if (!Number.isSafeInteger(quantity) || quantity < 1) {
+      throw new ShoppingListCommandError("Quantity must be a positive whole number");
+    }
+  }
+
+  #addAlwaysInStockContribution(definitionId: number, quantity: number): void {
+    const definition = this.#getAlwaysInStockDefinition(definitionId);
+    const activeItem = this.#database.prepare(`
+      SELECT id FROM shopping_items
+      WHERE product_id = ? AND package_option_id = ? AND state = 'active'
+    `).get(definition.product_id, definition.package_option_id) as { id: number } | undefined;
+    let shoppingItemId: number;
+    if (activeItem) {
+      shoppingItemId = activeItem.id;
+      this.#database.prepare("UPDATE shopping_items SET quantity = quantity + ? WHERE id = ?")
+        .run(quantity, shoppingItemId);
+    } else {
+      const result = this.#database.prepare(`
+        INSERT INTO shopping_items
+          (product_id, package_option_id, quantity, state, active_position)
+        VALUES (?, ?, ?, 'active', (SELECT COALESCE(MAX(active_position), 0) + 1 FROM shopping_items))
+      `).run(definition.product_id, definition.package_option_id, quantity);
+      shoppingItemId = Number(result.lastInsertRowid);
+    }
+    this.#database.prepare(`
+      INSERT INTO shopping_item_contributions
+        (shopping_item_id, source_kind, definition_id, quantity)
+      VALUES (?, 'always-in-stock', ?, ?)
+    `).run(shoppingItemId, definitionId, quantity);
+  }
+
+  #updateAlwaysInStockContribution(definitionId: number, quantity: number): void {
+    const contribution = this.#database.prepare(`
+      SELECT shopping_item_id, quantity
+      FROM shopping_item_contributions WHERE definition_id = ?
+    `).get(definitionId) as { quantity: number; shopping_item_id: number } | undefined;
+    if (!contribution) {
+      this.#addAlwaysInStockContribution(definitionId, quantity);
+      return;
+    }
+    const item = this.#database.prepare("SELECT quantity FROM shopping_items WHERE id = ?")
+      .get(contribution.shopping_item_id) as { quantity: number } | undefined;
+    if (!item) {
+      this.#database.prepare("DELETE FROM shopping_item_contributions WHERE definition_id = ?").run(definitionId);
+      this.#addAlwaysInStockContribution(definitionId, quantity);
+      return;
+    }
+    const nextItemQuantity = item.quantity - contribution.quantity + quantity;
+    this.#database.prepare("UPDATE shopping_items SET quantity = ? WHERE id = ?")
+      .run(nextItemQuantity, contribution.shopping_item_id);
+    this.#database.prepare("UPDATE shopping_item_contributions SET quantity = ? WHERE definition_id = ?")
+      .run(quantity, definitionId);
+  }
+
+  #removeAlwaysInStockContribution(definitionId: number): void {
+    const contribution = this.#database.prepare(`
+      SELECT shopping_item_id, quantity
+      FROM shopping_item_contributions WHERE definition_id = ?
+    `).get(definitionId) as { quantity: number; shopping_item_id: number } | undefined;
+    if (!contribution) return;
+    this.#database.prepare("DELETE FROM shopping_item_contributions WHERE definition_id = ?").run(definitionId);
+    const item = this.#database.prepare("SELECT quantity FROM shopping_items WHERE id = ?")
+      .get(contribution.shopping_item_id) as { quantity: number } | undefined;
+    if (!item) return;
+    const remaining = item.quantity - contribution.quantity;
+    if (remaining > 0) {
+      this.#database.prepare("UPDATE shopping_items SET quantity = ? WHERE id = ?")
+        .run(remaining, contribution.shopping_item_id);
+    } else {
+      this.#database.prepare("DELETE FROM shopping_items WHERE id = ?").run(contribution.shopping_item_id);
+    }
   }
 
   #findOrCreateProduct(name: string): { created: boolean; product: ProductRow } {
@@ -403,6 +718,7 @@ export class ShoppingListStore implements QuickEntryRepository {
       SELECT id FROM package_options
       WHERE product_id = ? AND size = 1 AND unit = 'unit' AND is_default = 1
       AND NOT EXISTS (SELECT 1 FROM shopping_items WHERE package_option_id = package_options.id)
+      AND NOT EXISTS (SELECT 1 FROM always_in_stock_definitions WHERE package_option_id = package_options.id)
       AND (SELECT COUNT(*) FROM package_options AS all_options WHERE all_options.product_id = ?) = 1
     `).get(productId, productId) as { id: number } | undefined : undefined;
     if (onlyImplicitOption) this.#database.prepare("DELETE FROM package_options WHERE id = ?").run(onlyImplicitOption.id);

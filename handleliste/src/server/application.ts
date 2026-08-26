@@ -58,7 +58,19 @@ const packageUnit = Type.Union([
   Type.Literal("tbsp"),
 ]);
 const itemIdParams = Type.Object({ itemId: positiveInteger });
+const definitionIdParams = Type.Object({ definitionId: positiveInteger });
 const undoBody = Type.Object({ token: nonBlankString });
+const alwaysInStockDefinitionBody = Type.Object({
+  defaultQuantity: positiveInteger,
+  packageOptionId: positiveInteger,
+  productId: positiveInteger,
+});
+const alwaysInStockSelectionsBody = Type.Object({
+  selections: Type.Array(Type.Object({
+    definitionId: positiveInteger,
+    quantity: positiveInteger,
+  })),
+});
 
 export async function startHandlelisteApp(
   options: ApplicationOptions,
@@ -164,6 +176,89 @@ function registerRoutes(
   });
 
   routes.get("/api/shopping-list", async () => context.shoppingList.getSnapshot());
+
+  routes.get("/api/shopping-list/always-in-stock", async () => {
+    const snapshot = context.shoppingList.getSnapshot();
+    return {
+      definitions: snapshot.alwaysInStockDefinitions,
+      selections: snapshot.alwaysInStockSelections,
+    };
+  });
+
+  routes.post(
+    "/api/shopping-list/always-in-stock/definitions",
+    {
+      schema: {
+        body: alwaysInStockDefinitionBody,
+      },
+      schemaErrorFormatter: validationError("Product, Package Option, and default Quantity are invalid"),
+    },
+    async (request, reply) => {
+      const snapshot = changed(context, () => context.shoppingList.createAlwaysInStockDefinition(request.body));
+      await reply.status(201).send(snapshot);
+    },
+  );
+
+  routes.patch(
+    "/api/shopping-list/always-in-stock/definitions/:definitionId",
+    {
+      schema: {
+        body: alwaysInStockDefinitionBody,
+        params: definitionIdParams,
+      },
+      schemaErrorFormatter: validationError("Product, Package Option, and default Quantity are invalid"),
+    },
+    async (request) => changed(
+      context,
+      () => context.shoppingList.updateAlwaysInStockDefinition(request.params.definitionId, request.body),
+    ),
+  );
+
+  routes.post(
+    "/api/shopping-list/always-in-stock/definitions/:definitionId/archive",
+    {
+      schema: {
+        body: Type.Object({ archived: Type.Boolean() }),
+        params: definitionIdParams,
+      },
+      schemaErrorFormatter: validationError("Archived state is invalid"),
+    },
+    async (request) => changed(
+      context,
+      () => context.shoppingList.archiveAlwaysInStockDefinition(
+        request.params.definitionId,
+        request.body.archived,
+      ),
+    ),
+  );
+
+  routes.post(
+    "/api/shopping-list/always-in-stock/definitions/reorder",
+    {
+      schema: {
+        body: Type.Object({ definitionIds: Type.Array(positiveInteger) }),
+      },
+      schemaErrorFormatter: validationError("Always in Stock definition order is invalid"),
+    },
+    async (request) => changed(
+      context,
+      () => context.shoppingList.reorderAlwaysInStockDefinitions(request.body.definitionIds),
+    ),
+  );
+
+  routes.put(
+    "/api/shopping-list/always-in-stock/selections",
+    {
+      schema: {
+        body: alwaysInStockSelectionsBody,
+      },
+      schemaErrorFormatter: validationError("Always in Stock selections are invalid"),
+    },
+    async (request) => changed(
+      context,
+      () => context.shoppingList.replaceAlwaysInStockSelections(request.body.selections),
+    ),
+  );
 
   routes.get("/api/shopping-list/events", async (_request, reply) => {
     reply.hijack();

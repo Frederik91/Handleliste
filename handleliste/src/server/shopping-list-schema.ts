@@ -33,6 +33,20 @@ export function prepareShoppingListSchema(database: DatabaseSync): void {
     ) STRICT;
     CREATE UNIQUE INDEX IF NOT EXISTS one_default_package_option_per_product
     ON package_options (product_id) WHERE is_default = 1;
+    CREATE TABLE IF NOT EXISTS always_in_stock_definitions (
+      id INTEGER PRIMARY KEY,
+      product_id INTEGER NOT NULL REFERENCES products(id),
+      package_option_id INTEGER NOT NULL REFERENCES package_options(id),
+      default_quantity INTEGER NOT NULL CHECK (default_quantity > 0),
+      position INTEGER NOT NULL CHECK (position > 0),
+      archived INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1))
+    ) STRICT;
+    CREATE UNIQUE INDEX IF NOT EXISTS one_active_always_in_stock_definition
+    ON always_in_stock_definitions (product_id, package_option_id) WHERE archived = 0;
+    CREATE TABLE IF NOT EXISTS always_in_stock_selections (
+      definition_id INTEGER PRIMARY KEY REFERENCES always_in_stock_definitions(id) ON DELETE CASCADE,
+      quantity INTEGER NOT NULL CHECK (quantity > 0)
+    ) STRICT;
     CREATE TABLE IF NOT EXISTS shopping_list_state (
       id INTEGER PRIMARY KEY CHECK (id = 1), revision INTEGER NOT NULL CHECK (revision >= 0)
     ) STRICT;
@@ -54,6 +68,15 @@ export function prepareShoppingListSchema(database: DatabaseSync): void {
 
   migrateShoppingItemState(database);
   database.exec(`
+    CREATE TABLE IF NOT EXISTS shopping_item_contributions (
+      shopping_item_id INTEGER NOT NULL REFERENCES shopping_items(id) ON DELETE CASCADE,
+      source_kind TEXT NOT NULL CHECK (source_kind = 'always-in-stock'),
+      definition_id INTEGER NOT NULL UNIQUE REFERENCES always_in_stock_definitions(id) ON DELETE CASCADE,
+      quantity INTEGER NOT NULL CHECK (quantity > 0),
+      PRIMARY KEY (shopping_item_id, source_kind, definition_id)
+    ) STRICT;
+
+
     CREATE UNIQUE INDEX IF NOT EXISTS one_active_shopping_item_per_package
     ON shopping_items (product_id, package_option_id) WHERE state = 'active';
   `);

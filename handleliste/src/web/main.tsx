@@ -2,12 +2,15 @@ import { StrictMode, useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { normalizeProductName } from "../shared/product-name.js";
 import type {
+  AlwaysInStockDefinitionInput,
+  AlwaysInStockSelectionInput,
   Product,
   ShoppingItemEdit,
   ShoppingListMutation,
   ShoppingListSnapshot,
 } from "../shared/shopping-list.js";
 import { followHomeAssistantTheme } from "./home-assistant-theme.js";
+import { AlwaysInStockDefinitionManagement, AlwaysInStockTripSelection } from "./always-in-stock-view.js";
 import { QuickEntryForm } from "./quick-entry-form.js";
 import { ShoppingListView } from "./shopping-list-view.js";
 import "./styles.css";
@@ -29,7 +32,23 @@ const translations = {
     add: "Add",
     addItem: "Add item",
     addItemFailed: "Could not add the item. Try again.",
+    addDefinition: "Add definition",
+    alwaysInStock: "Always in Stock",
+    archive: "Archive",
+    archived: "Archived",
     cancel: "Cancel",
+    close: "Close",
+    defaultQuantity: "Default Quantity",
+    decrease: "Decrease",
+    definitions: "Always in Stock definitions",
+    editDefinition: "Edit definition",
+    enable: "Enable",
+    increase: "Increase",
+    manageAlwaysInStock: "Manage Always in Stock",
+    moveDown: "Move down",
+    moveUp: "Move up",
+    noDefinitions: "No Always in Stock definitions yet.",
+    noProducts: "Add a Product to the Shopping List before creating a definition.",
     clearCompleted: "Clear completed",
     complete: "Complete",
     completed: "Completed",
@@ -40,9 +59,13 @@ const translations = {
     itemAdded: "Item added",
     itemsCleared: "Completed items cleared",
     language: "Language",
+    packageOption: "Package Option",
     packageSize: "Package size",
     product: "Product",
     quantity: "Quantity",
+    searchDefinitions: "Search definitions",
+    selectionFailed: "Could not save Always in Stock. Try again.",
+    submitAlwaysInStock: "Add to Shopping List",
     newTrip: "New shopping trip",
     newTripWarning: "Start a new shopping trip? All active, completed, and purchased items from this trip will be removed.",
     restore: "Restore",
@@ -55,7 +78,23 @@ const translations = {
     add: "Legg til",
     addItem: "Legg til vare",
     addItemFailed: "Kunne ikke legge til varen. Prøv igjen.",
+    addDefinition: "Legg til definisjon",
+    alwaysInStock: "Alltid på lager",
+    archive: "Arkiver",
+    archived: "Arkivert",
     cancel: "Avbryt",
+    close: "Lukk",
+    defaultQuantity: "Standardantall",
+    decrease: "Reduser",
+    definitions: "Definisjoner for alltid på lager",
+    editDefinition: "Rediger definisjon",
+    enable: "Aktiver",
+    increase: "Øk",
+    manageAlwaysInStock: "Administrer alltid på lager",
+    moveDown: "Flytt ned",
+    moveUp: "Flytt opp",
+    noDefinitions: "Ingen definisjoner for alltid på lager ennå.",
+    noProducts: "Legg et Produkt i Handlelisten før du lager en definisjon.",
     clearCompleted: "Fjern fullførte",
     complete: "Fullfør",
     completed: "Fullført",
@@ -66,9 +105,13 @@ const translations = {
     itemAdded: "Vare lagt til",
     itemsCleared: "Fullførte varer fjernet",
     language: "Språk",
+    packageOption: "Pakningsalternativ",
     packageSize: "Pakningsstørrelse",
     product: "Produkt",
     quantity: "Antall",
+    searchDefinitions: "Søk i definisjoner",
+    selectionFailed: "Kunne ikke lagre alltid på lager. Prøv igjen.",
+    submitAlwaysInStock: "Legg til i handlelisten",
     newTrip: "Ny handletur",
     newTripWarning: "Starte en ny handletur? Alle aktive, fullførte og kjøpte varer fra denne turen blir fjernet.",
     restore: "Gjenopprett",
@@ -92,6 +135,8 @@ function App() {
   const [entry, setEntry] = useState("");
   const [selectedProductId, setSelectedProductId] = useState<number>();
   const [addError, setAddError] = useState(false);
+  const [definitionManagementOpen, setDefinitionManagementOpen] = useState(false);
+  const [tripSelectionOpen, setTripSelectionOpen] = useState(false);
   const [undoNotice, setUndoNotice] = useState<UndoNotice>();
   const entryRevision = useRef(0);
   const shoppingListRevision = useRef(shoppingList.revision);
@@ -253,6 +298,76 @@ function App() {
     setUndoNotice(undefined);
   }
 
+  async function createAlwaysInStockDefinition(input: AlwaysInStockDefinitionInput): Promise<boolean> {
+    try {
+      const response = await fetch("api/shopping-list/always-in-stock/definitions", {
+        body: JSON.stringify(input),
+        headers: { "content-type": "application/json" },
+        method: "POST",
+      });
+      if (!response.ok) return false;
+      return applyShoppingListSnapshot(await response.json() as ShoppingListSnapshot);
+    } catch {
+      return false;
+    }
+  }
+
+  async function updateAlwaysInStockDefinition(definitionId: number, input: AlwaysInStockDefinitionInput): Promise<boolean> {
+    try {
+      const response = await fetch(`api/shopping-list/always-in-stock/definitions/${definitionId}`, {
+        body: JSON.stringify(input),
+        headers: { "content-type": "application/json" },
+        method: "PATCH",
+      });
+      if (!response.ok) return false;
+      return applyShoppingListSnapshot(await response.json() as ShoppingListSnapshot);
+    } catch {
+      return false;
+    }
+  }
+
+  async function archiveAlwaysInStockDefinition(definitionId: number, archived: boolean): Promise<boolean> {
+    try {
+      const response = await fetch(`api/shopping-list/always-in-stock/definitions/${definitionId}/archive`, {
+        body: JSON.stringify({ archived }),
+        headers: { "content-type": "application/json" },
+        method: "POST",
+      });
+      if (!response.ok) return false;
+      return applyShoppingListSnapshot(await response.json() as ShoppingListSnapshot);
+    } catch {
+      return false;
+    }
+  }
+
+  async function reorderAlwaysInStockDefinitions(definitionIds: readonly number[]): Promise<boolean> {
+    try {
+      const response = await fetch("api/shopping-list/always-in-stock/definitions/reorder", {
+        body: JSON.stringify({ definitionIds }),
+        headers: { "content-type": "application/json" },
+        method: "POST",
+      });
+      if (!response.ok) return false;
+      return applyShoppingListSnapshot(await response.json() as ShoppingListSnapshot);
+    } catch {
+      return false;
+    }
+  }
+
+  async function saveAlwaysInStockSelections(selections: readonly AlwaysInStockSelectionInput[]): Promise<boolean> {
+    try {
+      const response = await fetch("api/shopping-list/always-in-stock/selections", {
+        body: JSON.stringify({ selections }),
+        headers: { "content-type": "application/json" },
+        method: "PUT",
+      });
+      if (!response.ok) return false;
+      return applyShoppingListSnapshot(await response.json() as ShoppingListSnapshot);
+    } catch {
+      return false;
+    }
+  }
+
   async function startNewTrip() {
     if (!window.confirm(text.newTripWarning)) return;
     const response = await fetch("api/shopping-list/trips/new", { method: "POST" });
@@ -299,6 +414,8 @@ function App() {
         />
         {addError ? <p className="error" role="alert">{text.addItemFailed}</p> : null}
         <div className="trip-actions">
+          <button onClick={() => setTripSelectionOpen(true)} type="button">{text.alwaysInStock}</button>
+          <button onClick={() => setDefinitionManagementOpen(true)} type="button">{text.manageAlwaysInStock}</button>
           <button onClick={() => void startNewTrip()} type="button">{text.newTrip}</button>
           {shoppingList.items.some((item) => item.state.kind === "completed") ? (
             <button onClick={() => void clearCompleted()} type="button">{text.clearCompleted}</button>
@@ -319,6 +436,27 @@ function App() {
           />
         )}
       </section>
+      <AlwaysInStockDefinitionManagement
+        definitions={shoppingList.alwaysInStockDefinitions}
+        labels={text}
+        onArchive={archiveAlwaysInStockDefinition}
+        onClose={() => setDefinitionManagementOpen(false)}
+        onCreate={createAlwaysInStockDefinition}
+        onReorder={reorderAlwaysInStockDefinitions}
+        onUpdate={updateAlwaysInStockDefinition}
+        open={definitionManagementOpen}
+        products={shoppingList.products}
+      />
+      <AlwaysInStockTripSelection
+        definitions={shoppingList.alwaysInStockDefinitions}
+        labels={text}
+        onClose={() => setTripSelectionOpen(false)}
+        onSave={saveAlwaysInStockSelections}
+        open={tripSelectionOpen}
+        products={shoppingList.products}
+        revision={shoppingList.revision}
+        selections={shoppingList.alwaysInStockSelections}
+      />
       {undoNotice ? (
         <div className="undo-notification" role="status">
           <span>{undoNotice.kind === "quick-entry" ? text.itemAdded : text.itemsCleared}</span>

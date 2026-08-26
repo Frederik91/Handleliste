@@ -28,7 +28,34 @@ export type ShoppingListItem = ShoppingListItemBase & (
   | { state: { completedAt: number; kind: "completed" } }
 );
 
+export interface AlwaysInStockDefinition {
+  archived: boolean;
+  defaultQuantity: number;
+  id: number;
+  packageOptionId: number;
+  position: number;
+  productId: number;
+}
+
+export interface AlwaysInStockSelection {
+  definitionId: number;
+  quantity: number;
+}
+
+export interface AlwaysInStockDefinitionInput {
+  defaultQuantity: number;
+  packageOptionId: number;
+  productId: number;
+}
+
+export interface AlwaysInStockSelectionInput {
+  definitionId: number;
+  quantity: number;
+}
+
 export interface ShoppingListSnapshot {
+  alwaysInStockDefinitions: AlwaysInStockDefinition[];
+  alwaysInStockSelections: AlwaysInStockSelection[];
   items: ShoppingListItem[];
   products: Product[];
   revision: number;

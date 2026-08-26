@@ -160,6 +160,164 @@ select {
   cursor: pointer;
 }
 
+.always-in-stock-dialog {
+  width: min(100% - 2rem, 42rem);
+  max-height: calc(100vh - 2rem);
+  padding: 1rem;
+  border: 1px solid var(--divider-color, #bdbdbd);
+  border-radius: 0.45rem;
+  color: var(--primary-text-color, #212121);
+  background: var(--card-background-color, #fff);
+  box-shadow: 0 5px 18px rgb(0 0 0 / 28%);
+}
+
+.always-in-stock-dialog::backdrop {
+  background: rgb(0 0 0 / 32%);
+}
+
+.always-in-stock-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.always-in-stock-dialog-header h2 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.always-in-stock-dialog-header button {
+  border: 0;
+  color: var(--primary-text-color, #212121);
+  background: transparent;
+  font-size: 1.5rem;
+  cursor: pointer;
+}
+
+.always-in-stock-search,
+.always-in-stock-editor label {
+  display: grid;
+  gap: 0.25rem;
+  margin-top: 0.9rem;
+  color: var(--secondary-text-color, #727272);
+  font-size: 0.85rem;
+}
+
+.always-in-stock-search input,
+.always-in-stock-editor select,
+.always-in-stock-editor input,
+.always-in-stock-quantity input {
+  width: 100%;
+  border: 1px solid var(--divider-color, #bdbdbd);
+  border-radius: 0.3rem;
+  padding: 0.55rem;
+  color: var(--primary-text-color, #212121);
+  background: var(--card-background-color, #fff);
+  font: inherit;
+}
+
+.always-in-stock-definition-actions,
+.always-in-stock-editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 0.75rem;
+}
+
+.always-in-stock-definition-actions button,
+.always-in-stock-editor-actions button,
+.always-in-stock-quantity button {
+  border: 1px solid var(--primary-color, #03a9f4);
+  border-radius: 0.3rem;
+  padding: 0.4rem 0.65rem;
+  color: var(--primary-text-color, #212121);
+  background: transparent;
+  cursor: pointer;
+}
+
+.always-in-stock-definition-actions button:disabled,
+.always-in-stock-quantity button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.always-in-stock-definitions,
+.always-in-stock-selections {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0;
+  list-style: none;
+}
+
+.always-in-stock-definition,
+.always-in-stock-selection {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.7rem;
+  border: 1px solid var(--divider-color, #bdbdbd);
+  border-radius: 0.35rem;
+}
+
+.always-in-stock-definition > div:first-child,
+.always-in-stock-selection label {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.always-in-stock-definition span,
+.always-in-stock-definition small,
+.always-in-stock-selection small {
+  color: var(--secondary-text-color, #727272);
+}
+
+.always-in-stock-definition .always-in-stock-definition-actions {
+  justify-content: flex-end;
+  margin-top: 0;
+}
+
+.always-in-stock-selection label {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.always-in-stock-selection label > span {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.always-in-stock-selection input[type="checkbox"] {
+  width: 1.2rem;
+  height: 1.2rem;
+  accent-color: var(--primary-color, #03a9f4);
+}
+
+.always-in-stock-quantity {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.always-in-stock-quantity input {
+  width: 4.5rem;
+  text-align: center;
+}
+
+.always-in-stock-editor {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--divider-color, #bdbdbd);
+}
+
+.always-in-stock-editor h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
 .shopping-list,
 .product-group ul,
 .completed-section ul {
