@@ -639,6 +639,41 @@ test("manages and runs the Always in Stock checklist across Shopping Trips", asy
   }
 });
 
+test("opens Always in Stock dialogs as native modals and restores focus when they close", async ({ page }) => {
+  const system = await startHandlelisteTestSystem();
+  const homeAssistant = await system.addHomeAssistant();
+
+  try {
+    await page.goto(homeAssistant.ingressUrl);
+    const quickEntry = page.getByRole("combobox", { name: "Add item" });
+    const manageButton = page.getByRole("button", { name: "Manage Always in Stock" });
+
+    await manageButton.click();
+    const manager = page.getByRole("dialog", { name: "Manage Always in Stock" });
+    await expect(manager).toBeVisible();
+    await expect(manager).toHaveJSProperty("open", true);
+    expect(await manager.evaluate((element) => element.matches(":modal"))).toBe(true);
+    await quickEntry.focus();
+    await expect(quickEntry).not.toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(manager).toBeHidden();
+    await expect(manageButton).toBeFocused();
+
+    const selectionButton = page.getByRole("button", { exact: true, name: "Always in Stock" });
+    await selectionButton.click();
+    const selection = page.getByRole("dialog", { name: "Always in Stock" });
+    await expect(selection).toBeVisible();
+    expect(await selection.evaluate((element) => element.matches(":modal"))).toBe(true);
+    await quickEntry.focus();
+    await expect(quickEntry).not.toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(selection).toBeHidden();
+    await expect(selectionButton).toBeFocused();
+  } finally {
+    await system.close();
+  }
+});
+
 test("broadcasts Always in Stock changes and restores them after an App restart", async ({ browser }) => {
   const system = await startHandlelisteTestSystem();
   const fridaHomeAssistant = await system.addHomeAssistant({ user: FRIDA });

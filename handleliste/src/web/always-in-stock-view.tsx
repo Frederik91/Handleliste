@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type SyntheticEvent } from "react";
 import type {
   AlwaysInStockDefinition,
   AlwaysInStockDefinitionInput,
@@ -56,6 +56,37 @@ interface DefinitionEditorState {
   productId?: number;
 }
 
+function useModalDialog(open: boolean, onClose: () => void) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const returnFocusRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+
+    if (open && !dialog.open) {
+      const activeElement = document.activeElement;
+      returnFocusRef.current = activeElement instanceof HTMLElement ? activeElement : null;
+      dialog.showModal();
+    } else if (!open && dialog.open) {
+      dialog.close();
+    }
+  }, [open]);
+
+  function cancelDialog(event: SyntheticEvent<HTMLDialogElement>) {
+    event.preventDefault();
+    onClose();
+  }
+
+  function synchronizeClosedDialog() {
+    if (open) onClose();
+    returnFocusRef.current?.focus();
+    returnFocusRef.current = null;
+  }
+
+  return { cancelDialog, dialogRef, synchronizeClosedDialog };
+}
+
 export function AlwaysInStockDefinitionManagement({
   definitions,
   labels,
@@ -67,6 +98,7 @@ export function AlwaysInStockDefinitionManagement({
   open,
   products,
 }: DefinitionManagementProps) {
+  const { cancelDialog, dialogRef, synchronizeClosedDialog } = useModalDialog(open, onClose);
   const [search, setSearch] = useState("");
   const [editor, setEditor] = useState<DefinitionEditorState>();
   const [saveError, setSaveError] = useState(false);
@@ -154,8 +186,9 @@ export function AlwaysInStockDefinitionManagement({
     <dialog
       aria-labelledby="always-in-stock-management-title"
       className="always-in-stock-dialog"
-      onCancel={onClose}
-      open={open}
+      onCancel={cancelDialog}
+      onClose={synchronizeClosedDialog}
+      ref={dialogRef}
     >
       <div className="always-in-stock-dialog-header">
         <h2 id="always-in-stock-management-title">{labels.manageAlwaysInStock}</h2>
@@ -289,6 +322,7 @@ export function AlwaysInStockTripSelection({
   revision,
   selections,
 }: TripSelectionProps) {
+  const { cancelDialog, dialogRef, synchronizeClosedDialog } = useModalDialog(open, onClose);
   const [selectedQuantities, setSelectedQuantities] = useState<Map<number, number>>(new Map());
   const [saveError, setSaveError] = useState(false);
 
@@ -318,8 +352,9 @@ export function AlwaysInStockTripSelection({
     <dialog
       aria-labelledby="always-in-stock-selection-title"
       className="always-in-stock-dialog"
-      onCancel={onClose}
-      open={open}
+      onCancel={cancelDialog}
+      onClose={synchronizeClosedDialog}
+      ref={dialogRef}
     >
       <div className="always-in-stock-dialog-header">
         <h2 id="always-in-stock-selection-title">{labels.alwaysInStock}</h2>
