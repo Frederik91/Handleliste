@@ -56,7 +56,7 @@ interface DefinitionEditorState {
   productId?: number;
 }
 
-function useModalDialog(open: boolean, onClose: () => void) {
+export function useModalDialog(open: boolean, onClose: () => void) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
 

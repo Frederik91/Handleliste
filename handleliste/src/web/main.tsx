@@ -1,6 +1,7 @@
 import { StrictMode, useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { normalizeProductName } from "../shared/product-name.js";
+import type { RecipeInput, RecipePreview } from "../shared/recipe.js";
 import type {
   AlwaysInStockDefinitionInput,
   AlwaysInStockSelectionInput,
@@ -12,6 +13,7 @@ import type {
 import { followHomeAssistantTheme } from "./home-assistant-theme.js";
 import { AlwaysInStockDefinitionManagement, AlwaysInStockTripSelection } from "./always-in-stock-view.js";
 import { QuickEntryForm } from "./quick-entry-form.js";
+import { RecipeManagement } from "./recipe-view.js";
 import { ShoppingListView } from "./shopping-list-view.js";
 import "./styles.css";
 
@@ -29,96 +31,47 @@ type UndoNotice =
 
 const translations = {
   en: {
-    add: "Add",
-    addItem: "Add item",
-    addItemFailed: "Could not add the item. Try again.",
-    addDefinition: "Add definition",
-    alwaysInStock: "Always in Stock",
-    archive: "Archive",
-    archived: "Archived",
-    cancel: "Cancel",
-    close: "Close",
-    defaultQuantity: "Default Quantity",
-    decrease: "Decrease",
-    definitions: "Always in Stock definitions",
-    editDefinition: "Edit definition",
-    enable: "Enable",
-    increase: "Increase",
-    manageAlwaysInStock: "Manage Always in Stock",
-    moveDown: "Move down",
-    moveUp: "Move up",
-    noDefinitions: "No Always in Stock definitions yet.",
-    noProducts: "Add a Product to the Shopping List before creating a definition.",
-    clearCompleted: "Clear completed",
-    complete: "Complete",
-    completed: "Completed",
-    edit: "Edit",
-    editItemFailed: "Could not save the item. Try again.",
-    emptyDescription: "Items you add will appear here.",
-    emptyTitle: "Your shopping list is ready",
-    itemAdded: "Item added",
-    itemsCleared: "Completed items cleared",
-    language: "Language",
-    packageOption: "Package Option",
-    packageSize: "Package size",
-    product: "Product",
-    quantity: "Quantity",
-    searchDefinitions: "Search definitions",
-    selectionFailed: "Could not save Always in Stock. Try again.",
-    submitAlwaysInStock: "Add to Shopping List",
-    newTrip: "New shopping trip",
+    add: "Add", addDefinition: "Add definition", addIngredient: "Add ingredient", addItem: "Add item",
+    addItemFailed: "Could not add the item. Try again.", addRecipe: "Add recipe", alwaysInStock: "Always in Stock",
+    amount: "Amount", archive: "Archive", archived: "Archived", cancel: "Cancel", clearCompleted: "Clear completed",
+    close: "Close", complete: "Complete", completed: "Completed", decrease: "Decrease", defaultQuantity: "Default Quantity",
+    definitions: "Always in Stock definitions", edit: "Edit", editDefinition: "Edit definition",
+    editItemFailed: "Could not save the item. Try again.", editRecipe: "Edit recipe",
+    emptyDescription: "Items you add will appear here.", emptyTitle: "Your shopping list is ready", enable: "Enable",
+    increase: "Increase", ingredient: "Ingredient", itemAdded: "Item added", itemsCleared: "Completed items cleared",
+    language: "Language", manageAlwaysInStock: "Manage Always in Stock", manageRecipes: "Manage Recipes",
+    moveDown: "Move down", moveUp: "Move up", newTrip: "New shopping trip",
     newTripWarning: "Start a new shopping trip? All active, completed, and purchased items from this trip will be removed.",
-    restore: "Restore",
-    save: "Save",
-    undo: "Undo",
-    unit: "unit",
-    unitLabel: "Unit",
+    noDefinitions: "No Always in Stock definitions yet.", noProducts: "Add a Product to the Shopping List before creating a definition.",
+    noProductsForRecipes: "Add a Product to the Shopping List before creating a Recipe.", noRecipes: "No Recipes yet.",
+    note: "Note", packageOption: "Package Option", packageSize: "Package size", preview: "Preview", product: "Product",
+    quantity: "Quantity", recipeCount: "Recipe count", recipeName: "Recipe name", recipePreview: "Recipe preview",
+    recipes: "Recipes", removeIngredient: "Remove ingredient", restore: "Restore", save: "Save",
+    saveRecipeFailed: "Could not save the Recipe. Check its Ingredient dimensions.", searchDefinitions: "Search definitions",
+    searchRecipes: "Search recipes", selectionFailed: "Could not save Always in Stock. Try again.",
+    submitAlwaysInStock: "Add to Shopping List", undo: "Undo", unit: "unit", unitLabel: "Unit",
   },
   nb: {
-    add: "Legg til",
-    addItem: "Legg til vare",
-    addItemFailed: "Kunne ikke legge til varen. Prøv igjen.",
-    addDefinition: "Legg til definisjon",
-    alwaysInStock: "Alltid på lager",
-    archive: "Arkiver",
-    archived: "Arkivert",
-    cancel: "Avbryt",
-    close: "Lukk",
-    defaultQuantity: "Standardantall",
-    decrease: "Reduser",
-    definitions: "Definisjoner for alltid på lager",
-    editDefinition: "Rediger definisjon",
-    enable: "Aktiver",
-    increase: "Øk",
-    manageAlwaysInStock: "Administrer alltid på lager",
-    moveDown: "Flytt ned",
-    moveUp: "Flytt opp",
-    noDefinitions: "Ingen definisjoner for alltid på lager ennå.",
-    noProducts: "Legg et Produkt i Handlelisten før du lager en definisjon.",
-    clearCompleted: "Fjern fullførte",
-    complete: "Fullfør",
-    completed: "Fullført",
-    edit: "Rediger",
-    editItemFailed: "Kunne ikke lagre varen. Prøv igjen.",
-    emptyDescription: "Varer du legger til, vises her.",
-    emptyTitle: "Handlelisten din er klar",
-    itemAdded: "Vare lagt til",
-    itemsCleared: "Fullførte varer fjernet",
-    language: "Språk",
-    packageOption: "Pakningsalternativ",
-    packageSize: "Pakningsstørrelse",
-    product: "Produkt",
-    quantity: "Antall",
-    searchDefinitions: "Søk i definisjoner",
-    selectionFailed: "Kunne ikke lagre alltid på lager. Prøv igjen.",
-    submitAlwaysInStock: "Legg til i handlelisten",
-    newTrip: "Ny handletur",
+    add: "Legg til", addDefinition: "Legg til definisjon", addIngredient: "Legg til ingrediens", addItem: "Legg til vare",
+    addItemFailed: "Kunne ikke legge til varen. Prøv igjen.", addRecipe: "Legg til oppskrift", alwaysInStock: "Alltid på lager",
+    amount: "Mengde", archive: "Arkiver", archived: "Arkivert", cancel: "Avbryt", clearCompleted: "Fjern fullførte",
+    close: "Lukk", complete: "Fullfør", completed: "Fullført", decrease: "Reduser", defaultQuantity: "Standardantall",
+    definitions: "Definisjoner for alltid på lager", edit: "Rediger", editDefinition: "Rediger definisjon",
+    editItemFailed: "Kunne ikke lagre varen. Prøv igjen.", editRecipe: "Rediger oppskrift",
+    emptyDescription: "Varer du legger til, vises her.", emptyTitle: "Handlelisten din er klar", enable: "Aktiver",
+    increase: "Øk", ingredient: "Ingrediens", itemAdded: "Vare lagt til", itemsCleared: "Fullførte varer fjernet",
+    language: "Språk", manageAlwaysInStock: "Administrer alltid på lager", manageRecipes: "Administrer oppskrifter",
+    moveDown: "Flytt ned", moveUp: "Flytt opp", newTrip: "Ny handletur",
     newTripWarning: "Starte en ny handletur? Alle aktive, fullførte og kjøpte varer fra denne turen blir fjernet.",
-    restore: "Gjenopprett",
-    save: "Lagre",
-    undo: "Angre",
-    unit: "enhet",
-    unitLabel: "Enhet",
+    noDefinitions: "Ingen definisjoner for alltid på lager ennå.", noProducts: "Legg et Produkt i Handlelisten før du lager en definisjon.",
+    noProductsForRecipes: "Legg et Produkt i Handlelisten før du lager en oppskrift.", noRecipes: "Ingen oppskrifter ennå.",
+    note: "Notat", packageOption: "Pakningsalternativ", packageSize: "Pakningsstørrelse", preview: "Forhåndsvis",
+    product: "Produkt", quantity: "Antall", recipeCount: "Antall oppskrifter", recipeName: "Navn på oppskrift",
+    recipePreview: "Forhåndsvisning av oppskrift", recipes: "Oppskrifter", removeIngredient: "Fjern ingrediens",
+    restore: "Gjenopprett", save: "Lagre", saveRecipeFailed: "Kunne ikke lagre oppskriften. Kontroller ingrediensenhetene.",
+    searchDefinitions: "Søk i definisjoner", searchRecipes: "Søk i oppskrifter",
+    selectionFailed: "Kunne ikke lagre alltid på lager. Prøv igjen.", submitAlwaysInStock: "Legg til i handlelisten",
+    undo: "Angre", unit: "enhet", unitLabel: "Enhet",
   },
 } satisfies Record<Locale, Record<string, string>>;
 
@@ -136,6 +89,7 @@ function App() {
   const [selectedProductId, setSelectedProductId] = useState<number>();
   const [addError, setAddError] = useState(false);
   const [definitionManagementOpen, setDefinitionManagementOpen] = useState(false);
+  const [recipeManagementOpen, setRecipeManagementOpen] = useState(false);
   const [tripSelectionOpen, setTripSelectionOpen] = useState(false);
   const [undoNotice, setUndoNotice] = useState<UndoNotice>();
   const entryRevision = useRef(0);
@@ -368,6 +322,55 @@ function App() {
     }
   }
 
+  async function saveRecipeRequest(url: string, method: "PATCH" | "POST", input: RecipeInput): Promise<boolean> {
+    try {
+      const response = await fetch(url, {
+        body: JSON.stringify(input),
+        headers: { "content-type": "application/json" },
+        method,
+      });
+      if (!response.ok) return false;
+      return applyShoppingListSnapshot(await response.json() as ShoppingListSnapshot);
+    } catch {
+      return false;
+    }
+  }
+
+  function createRecipe(input: RecipeInput): Promise<boolean> {
+    return saveRecipeRequest("api/recipes", "POST", input);
+  }
+
+  function updateRecipe(recipeId: number, input: RecipeInput): Promise<boolean> {
+    return saveRecipeRequest(`api/recipes/${recipeId}`, "PATCH", input);
+  }
+
+  async function archiveRecipe(recipeId: number, archived: boolean): Promise<boolean> {
+    try {
+      const response = await fetch(`api/recipes/${recipeId}/archive`, {
+        body: JSON.stringify({ archived }),
+        headers: { "content-type": "application/json" },
+        method: "POST",
+      });
+      if (!response.ok) return false;
+      return applyShoppingListSnapshot(await response.json() as ShoppingListSnapshot);
+    } catch {
+      return false;
+    }
+  }
+
+  async function previewRecipe(recipeId: number, count: number): Promise<RecipePreview | undefined> {
+    try {
+      const response = await fetch(`api/recipes/${recipeId}/preview`, {
+        body: JSON.stringify({ count }),
+        headers: { "content-type": "application/json" },
+        method: "POST",
+      });
+      return response.ok ? await response.json() as RecipePreview : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
   async function startNewTrip() {
     if (!window.confirm(text.newTripWarning)) return;
     const response = await fetch("api/shopping-list/trips/new", { method: "POST" });
@@ -414,6 +417,7 @@ function App() {
         />
         {addError ? <p className="error" role="alert">{text.addItemFailed}</p> : null}
         <div className="trip-actions">
+          <button onClick={() => setRecipeManagementOpen(true)} type="button">{text.manageRecipes}</button>
           <button onClick={() => setTripSelectionOpen(true)} type="button">{text.alwaysInStock}</button>
           <button onClick={() => setDefinitionManagementOpen(true)} type="button">{text.manageAlwaysInStock}</button>
           <button onClick={() => void startNewTrip()} type="button">{text.newTrip}</button>
@@ -456,6 +460,18 @@ function App() {
         products={shoppingList.products}
         revision={shoppingList.revision}
         selections={shoppingList.alwaysInStockSelections}
+      />
+      <RecipeManagement
+        labels={text}
+        onArchive={archiveRecipe}
+        onClose={() => setRecipeManagementOpen(false)}
+        onCreate={createRecipe}
+        onPreview={previewRecipe}
+        onUpdate={updateRecipe}
+        open={recipeManagementOpen}
+        products={shoppingList.products}
+        recipes={shoppingList.recipes}
+        revision={shoppingList.revision}
       />
       {undoNotice ? (
         <div className="undo-notification" role="status">

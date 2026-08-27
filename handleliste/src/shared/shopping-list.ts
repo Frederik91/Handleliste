@@ -58,6 +58,7 @@ export interface ShoppingListSnapshot {
   alwaysInStockSelections: AlwaysInStockSelection[];
   items: ShoppingListItem[];
   products: Product[];
+  recipes: Recipe[];
   revision: number;
 }
 
@@ -73,3 +74,4 @@ export interface ShoppingItemEdit {
   productName: string;
   quantity: number;
 }
+import type { Recipe } from "./recipe.js";

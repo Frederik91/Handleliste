@@ -47,6 +47,20 @@ export function prepareShoppingListSchema(database: DatabaseSync): void {
       definition_id INTEGER PRIMARY KEY REFERENCES always_in_stock_definitions(id) ON DELETE CASCADE,
       quantity INTEGER NOT NULL CHECK (quantity > 0)
     ) STRICT;
+    CREATE TABLE IF NOT EXISTS recipes (
+      id INTEGER PRIMARY KEY,
+      name TEXT NOT NULL CHECK (length(trim(name)) > 0),
+      note TEXT,
+      archived INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1))
+    ) STRICT;
+    CREATE TABLE IF NOT EXISTS recipe_requirements (
+      recipe_id INTEGER NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,
+      position INTEGER NOT NULL CHECK (position > 0),
+      product_id INTEGER NOT NULL REFERENCES products(id),
+      amount REAL NOT NULL CHECK (amount > 0),
+      unit TEXT NOT NULL CHECK (unit IN ('g', 'kg', 'ml', 'cl', 'dl', 'L', 'tsp', 'tbsp', 'piece')),
+      PRIMARY KEY (recipe_id, position)
+    ) STRICT;
     CREATE TABLE IF NOT EXISTS shopping_list_state (
       id INTEGER PRIMARY KEY CHECK (id = 1), revision INTEGER NOT NULL CHECK (revision >= 0)
     ) STRICT;
