@@ -1,3 +1,4 @@
+import type { Recipe } from "./recipe.js";
 export type PackageUnit = "unit" | "piece" | "g" | "kg" | "ml" | "cl" | "dl" | "L" | "tsp" | "tbsp";
 
 export type MeasurementDimension = "count" | "mass" | "volume";
@@ -58,6 +59,7 @@ export interface ShoppingListSnapshot {
   alwaysInStockSelections: AlwaysInStockSelection[];
   items: ShoppingListItem[];
   products: Product[];
+  recipes: Recipe[];
   revision: number;
 }
 

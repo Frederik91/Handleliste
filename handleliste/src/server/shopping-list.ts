@@ -1,3 +1,5 @@
+import { calculateRecipePreview, RecipeMeasurementError } from "../domain/recipe-measurement.js";
+import { recipeUnitDimension, type Recipe, type RecipeInput, type RecipePreview, type RecipeUnit } from "../domain/recipe.js";
 import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import type { ParsedQuickEntry, QuickEntryRepository } from "../domain/quick-entry.js";
@@ -9,6 +11,7 @@ import type {
   AlwaysInStockSelection,
   AlwaysInStockSelectionInput,
   Product,
+  MeasurementDimension,
   ShoppingItemEdit,
   ShoppingListItem,
   ShoppingListMutation,
@@ -20,6 +23,13 @@ import type {
   ProductRow,
 } from "./storage/shopping-list-rows.js";
 import { openShoppingListDatabase } from "./storage/open-shopping-list-database.js";
+
+interface RecipeRow {
+  archived: number;
+  id: number;
+  name: string;
+  note: string | null;
+}
 
 export class ShoppingListStore implements QuickEntryRepository {
   readonly #database: DatabaseSync;
@@ -121,8 +131,70 @@ export class ShoppingListStore implements QuickEntryRepository {
       alwaysInStockSelections: this.#getAlwaysInStockSelections(),
       items,
       products,
+      recipes: this.#getRecipes(),
       revision: state.revision,
     };
+  }
+
+  createRecipe(input: RecipeInput): ShoppingListSnapshot {
+    this.#database.exec("BEGIN IMMEDIATE");
+    try {
+      const normalized = this.#validateRecipeInput(input);
+      const result = this.#database.prepare("INSERT INTO recipes (name, note) VALUES (?, ?)")
+        .run(normalized.name, normalized.note ?? null);
+      this.#replaceRecipeRequirements(Number(result.lastInsertRowid), normalized.requirements);
+      this.#incrementRevision();
+      this.#database.exec("COMMIT");
+    } catch (error) {
+      this.#database.exec("ROLLBACK");
+      throw error;
+    }
+    return this.getSnapshot();
+  }
+
+  updateRecipe(recipeId: number, input: RecipeInput): ShoppingListSnapshot {
+    this.#database.exec("BEGIN IMMEDIATE");
+    try {
+      this.#getRecipe(recipeId);
+      const normalized = this.#validateRecipeInput(input);
+      this.#database.prepare("UPDATE recipes SET name = ?, note = ? WHERE id = ?")
+        .run(normalized.name, normalized.note ?? null, recipeId);
+      this.#replaceRecipeRequirements(recipeId, normalized.requirements);
+      this.#incrementRevision();
+      this.#database.exec("COMMIT");
+    } catch (error) {
+      this.#database.exec("ROLLBACK");
+      throw error;
+    }
+    return this.getSnapshot();
+  }
+
+  archiveRecipe(recipeId: number, archived: boolean): ShoppingListSnapshot {
+    this.#database.exec("BEGIN IMMEDIATE");
+    try {
+      const recipe = this.#getRecipe(recipeId);
+      if (recipe.archived !== (archived ? 1 : 0)) {
+        this.#database.prepare("UPDATE recipes SET archived = ? WHERE id = ?")
+          .run(archived ? 1 : 0, recipeId);
+        this.#incrementRevision();
+      }
+      this.#database.exec("COMMIT");
+    } catch (error) {
+      this.#database.exec("ROLLBACK");
+      throw error;
+    }
+    return this.getSnapshot();
+  }
+
+  previewRecipe(recipeId: number, count: number): RecipePreview {
+    const recipe = this.#getRecipes().find((candidate) => candidate.id === recipeId);
+    if (!recipe) throw new ShoppingListCommandError("Recipe does not exist");
+    try {
+      return { count, lines: calculateRecipePreview(recipe.requirements, count), recipeId };
+    } catch (error) {
+      if (error instanceof RecipeMeasurementError) throw new ShoppingListCommandError(error.message);
+      throw error;
+    }
   }
 
   createAlwaysInStockDefinition(input: AlwaysInStockDefinitionInput): ShoppingListSnapshot {
@@ -469,7 +541,11 @@ export class ShoppingListStore implements QuickEntryRepository {
           DELETE FROM package_options WHERE id = ?
           AND NOT EXISTS (SELECT 1 FROM shopping_items WHERE package_option_id = ?)
           AND NOT EXISTS (SELECT 1 FROM always_in_stock_definitions WHERE package_option_id = ?)
-        `).run(undo.package_option_id, undo.package_option_id, undo.package_option_id);
+          AND NOT EXISTS (
+            SELECT 1 FROM recipe_requirements
+            WHERE product_id = (SELECT product_id FROM package_options WHERE id = ?)
+          )
+        `).run(undo.package_option_id, undo.package_option_id, undo.package_option_id, undo.package_option_id);
       }
       if (undo.created_product === 1) {
         const hasItems = this.#database.prepare("SELECT 1 FROM shopping_items WHERE product_id = ? LIMIT 1")
@@ -479,11 +555,13 @@ export class ShoppingListStore implements QuickEntryRepository {
           this.#database.prepare(`
             DELETE FROM package_options WHERE product_id = ?
             AND NOT EXISTS (SELECT 1 FROM always_in_stock_definitions WHERE product_id = ?)
-          `).run(undo.product_id, undo.product_id);
+            AND NOT EXISTS (SELECT 1 FROM recipe_requirements WHERE product_id = ?)
+          `).run(undo.product_id, undo.product_id, undo.product_id);
           this.#database.prepare(`
             DELETE FROM products WHERE id = ?
             AND NOT EXISTS (SELECT 1 FROM always_in_stock_definitions WHERE product_id = ?)
-          `).run(undo.product_id, undo.product_id);
+            AND NOT EXISTS (SELECT 1 FROM recipe_requirements WHERE product_id = ?)
+          `).run(undo.product_id, undo.product_id, undo.product_id);
         }
       }
       this.#incrementRevision();
@@ -509,6 +587,79 @@ export class ShoppingListStore implements QuickEntryRepository {
       position: definition.position,
       productId: definition.product_id,
     }));
+  }
+
+  #getRecipes(): Recipe[] {
+    const recipes = this.#database.prepare(`
+      SELECT id, name, note, archived FROM recipes ORDER BY id
+    `).all() as unknown as RecipeRow[];
+    const requirements = this.#database.prepare(`
+      SELECT recipe_id, product_id, amount, unit
+      FROM recipe_requirements ORDER BY recipe_id, position
+    `).all() as unknown as Array<{
+      amount: number;
+      product_id: number;
+      recipe_id: number;
+      unit: RecipeUnit;
+    }>;
+    return recipes.map((recipe) => ({
+      archived: recipe.archived === 1,
+      id: recipe.id,
+      name: recipe.name,
+      ...(recipe.note === null ? {} : { note: recipe.note }),
+      requirements: requirements
+        .filter((requirement) => requirement.recipe_id === recipe.id)
+        .map((requirement) => ({
+          amount: requirement.amount,
+          productId: requirement.product_id,
+          unit: requirement.unit,
+        })),
+    }));
+  }
+
+  #getRecipe(recipeId: number): RecipeRow {
+    const recipe = this.#database.prepare("SELECT id, name, note, archived FROM recipes WHERE id = ?")
+      .get(recipeId) as RecipeRow | undefined;
+    if (!recipe) throw new ShoppingListCommandError("Recipe does not exist");
+    return recipe;
+  }
+
+  #validateRecipeInput(input: RecipeInput): RecipeInput {
+    const name = input.name.trim();
+    const note = input.note?.trim() || undefined;
+    if (!name) throw new ShoppingListCommandError("Recipe name is required");
+    if (input.requirements.length === 0) {
+      throw new ShoppingListCommandError("A Recipe must have at least one Ingredient Requirement");
+    }
+    for (const requirement of input.requirements) {
+      this.#getProduct(requirement.productId);
+      const dimension = recipeUnitDimension(requirement.unit);
+      const dimensions = this.#database.prepare(`
+        SELECT DISTINCT measurement_dimension
+        FROM package_options WHERE product_id = ? AND archived = 0
+      `).all(requirement.productId) as unknown as Array<{ measurement_dimension: MeasurementDimension }>;
+      if (!dimensions.some((candidate) => candidate.measurement_dimension === dimension)) {
+        throw new ShoppingListCommandError("Ingredient unit is incompatible with the Product's Package Options");
+      }
+    }
+    try {
+      calculateRecipePreview(input.requirements, 1);
+    } catch (error) {
+      if (error instanceof RecipeMeasurementError) throw new ShoppingListCommandError(error.message);
+      throw error;
+    }
+    return { name, ...(note ? { note } : {}), requirements: input.requirements.map((requirement) => ({ ...requirement })) };
+  }
+
+  #replaceRecipeRequirements(recipeId: number, requirements: readonly RecipeInput["requirements"][number][]): void {
+    this.#database.prepare("DELETE FROM recipe_requirements WHERE recipe_id = ?").run(recipeId);
+    const insert = this.#database.prepare(`
+      INSERT INTO recipe_requirements (recipe_id, position, product_id, amount, unit)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+    requirements.forEach((requirement, index) => {
+      insert.run(recipeId, index + 1, requirement.productId, requirement.amount, requirement.unit);
+    });
   }
 
   #getAlwaysInStockSelections(): AlwaysInStockSelection[] {

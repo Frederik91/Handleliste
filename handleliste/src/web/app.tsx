@@ -1,3 +1,5 @@
+import type { RecipeInput, RecipePreview } from "../domain/recipe.js";
+import { RecipeManagement } from "./recipe-view.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { normalizeProductName } from "../domain/product-name.js";
 import type {
@@ -39,6 +41,7 @@ export function App() {
   const [selectedProductId, setSelectedProductId] = useState<number>();
   const [addError, setAddError] = useState(false);
   const [definitionManagementOpen, setDefinitionManagementOpen] = useState(false);
+  const [recipeManagementOpen, setRecipeManagementOpen] = useState(false);
   const [tripSelectionOpen, setTripSelectionOpen] = useState(false);
   const [undoNotice, setUndoNotice] = useState<UndoNotice>();
   const entryRevision = useRef(0);
@@ -271,6 +274,55 @@ export function App() {
     }
   }
 
+  async function saveRecipeRequest(url: string, method: "PATCH" | "POST", input: RecipeInput): Promise<boolean> {
+    try {
+      const response = await fetch(url, {
+        body: JSON.stringify(input),
+        headers: { "content-type": "application/json" },
+        method,
+      });
+      if (!response.ok) return false;
+      return applyShoppingListSnapshot(await response.json() as ShoppingListSnapshot);
+    } catch {
+      return false;
+    }
+  }
+
+  function createRecipe(input: RecipeInput): Promise<boolean> {
+    return saveRecipeRequest("api/recipes", "POST", input);
+  }
+
+  function updateRecipe(recipeId: number, input: RecipeInput): Promise<boolean> {
+    return saveRecipeRequest(`api/recipes/${recipeId}`, "PATCH", input);
+  }
+
+  async function archiveRecipe(recipeId: number, archived: boolean): Promise<boolean> {
+    try {
+      const response = await fetch(`api/recipes/${recipeId}/archive`, {
+        body: JSON.stringify({ archived }),
+        headers: { "content-type": "application/json" },
+        method: "POST",
+      });
+      if (!response.ok) return false;
+      return applyShoppingListSnapshot(await response.json() as ShoppingListSnapshot);
+    } catch {
+      return false;
+    }
+  }
+
+  async function previewRecipe(recipeId: number, count: number): Promise<RecipePreview | undefined> {
+    try {
+      const response = await fetch(`api/recipes/${recipeId}/preview`, {
+        body: JSON.stringify({ count }),
+        headers: { "content-type": "application/json" },
+        method: "POST",
+      });
+      return response.ok ? await response.json() as RecipePreview : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
   async function startNewTrip() {
     if (!window.confirm(text.newTripWarning)) return;
     const response = await fetch("api/shopping-list/trips/new", { method: "POST" });
@@ -317,6 +369,7 @@ export function App() {
         />
         {addError ? <p className="error" role="alert">{text.addItemFailed}</p> : null}
         <div className="trip-actions">
+          <button onClick={() => setRecipeManagementOpen(true)} type="button">{text.manageRecipes}</button>
           <button onClick={() => setTripSelectionOpen(true)} type="button">{text.alwaysInStock}</button>
           <button onClick={() => setDefinitionManagementOpen(true)} type="button">{text.manageAlwaysInStock}</button>
           <button onClick={() => void startNewTrip()} type="button">{text.newTrip}</button>
@@ -359,6 +412,18 @@ export function App() {
         products={shoppingList.products}
         revision={shoppingList.revision}
         selections={shoppingList.alwaysInStockSelections}
+      />
+      <RecipeManagement
+        labels={text}
+        onArchive={archiveRecipe}
+        onClose={() => setRecipeManagementOpen(false)}
+        onCreate={createRecipe}
+        onPreview={previewRecipe}
+        onUpdate={updateRecipe}
+        open={recipeManagementOpen}
+        products={shoppingList.products}
+        recipes={shoppingList.recipes}
+        revision={shoppingList.revision}
       />
       {undoNotice ? (
         <div className="undo-notification" role="status">

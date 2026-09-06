@@ -40,6 +40,7 @@ const packageUnit = Type.Union([
 ]);
 const itemIdParams = Type.Object({ itemId: positiveInteger });
 const definitionIdParams = Type.Object({ definitionId: positiveInteger });
+const recipeIdParams = Type.Object({ recipeId: positiveInteger });
 const undoBody = Type.Object({ token: nonBlankString });
 const alwaysInStockDefinitionBody = Type.Object({
   defaultQuantity: positiveInteger,
@@ -51,6 +52,27 @@ const alwaysInStockSelectionsBody = Type.Object({
     definitionId: positiveInteger,
     quantity: positiveInteger,
   })),
+});
+
+const recipeUnit = Type.Union([
+  Type.Literal("g"),
+  Type.Literal("kg"),
+  Type.Literal("ml"),
+  Type.Literal("cl"),
+  Type.Literal("dl"),
+  Type.Literal("L"),
+  Type.Literal("tsp"),
+  Type.Literal("tbsp"),
+  Type.Literal("piece"),
+]);
+const recipeBody = Type.Object({
+  name: nonBlankString,
+  note: Type.Optional(Type.String()),
+  requirements: Type.Array(Type.Object({
+    amount: Type.Number({ exclusiveMinimum: 0 }),
+    productId: positiveInteger,
+    unit: recipeUnit,
+  }), { minItems: 1 }),
 });
 
 export function registerRoutes(
@@ -79,6 +101,57 @@ export function registerRoutes(
   });
 
   routes.get("/api/shopping-list", async () => context.shoppingList.getSnapshot());
+
+  routes.post(
+    "/api/recipes",
+    {
+      schema: { body: recipeBody },
+      schemaErrorFormatter: validationError("Recipe name and Ingredient Requirements are invalid"),
+    },
+    async (request, reply) => {
+      const snapshot = changed(context, () => context.shoppingList.createRecipe(request.body));
+      await reply.status(201).send(snapshot);
+    },
+  );
+
+  routes.patch(
+    "/api/recipes/:recipeId",
+    {
+      schema: { body: recipeBody, params: recipeIdParams },
+      schemaErrorFormatter: validationError("Recipe name and Ingredient Requirements are invalid"),
+    },
+    async (request) => changed(
+      context,
+      () => context.shoppingList.updateRecipe(request.params.recipeId, request.body),
+    ),
+  );
+
+  routes.post(
+    "/api/recipes/:recipeId/archive",
+    {
+      schema: {
+        body: Type.Object({ archived: Type.Boolean() }),
+        params: recipeIdParams,
+      },
+      schemaErrorFormatter: validationError("Archived state is invalid"),
+    },
+    async (request) => changed(
+      context,
+      () => context.shoppingList.archiveRecipe(request.params.recipeId, request.body.archived),
+    ),
+  );
+
+  routes.post(
+    "/api/recipes/:recipeId/preview",
+    {
+      schema: {
+        body: Type.Object({ count: positiveInteger }),
+        params: recipeIdParams,
+      },
+      schemaErrorFormatter: validationError("Recipe count must be a positive whole number"),
+    },
+    async (request) => context.shoppingList.previewRecipe(request.params.recipeId, request.body.count),
+  );
 
   routes.get("/api/shopping-list/always-in-stock", async () => {
     const snapshot = context.shoppingList.getSnapshot();
