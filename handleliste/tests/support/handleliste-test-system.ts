@@ -10,7 +10,7 @@ import {
   type FakeHomeAssistantOptions,
   type FakeHomeAssistantUser,
   type RunningFakeHomeAssistant,
-} from "./fake-home-assistant.js";
+} from "../../src/dev-support/fake-home-assistant.js";
 
 export const FRIDA: FakeHomeAssistantUser = {
   displayName: "Frida Handlekurv",

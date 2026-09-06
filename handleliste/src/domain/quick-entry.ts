@@ -1,5 +1,5 @@
-import { measurementDimensionFor } from "../shared/package-option.js";
-import type { MeasurementDimension, PackageUnit, ShoppingListMutation } from "../shared/shopping-list.js";
+import { measurementDimensionFor } from "./package-option.js";
+import type { MeasurementDimension, PackageUnit, ShoppingListMutation } from "./shopping-list.js";
 
 export interface ParsedQuickEntry {
   packageOption?: {

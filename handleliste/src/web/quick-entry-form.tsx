@@ -1,6 +1,6 @@
 import type { FormEvent } from "react";
-import type { Product } from "../shared/shopping-list.js";
-import { normalizeProductName } from "../shared/product-name.js";
+import type { Product } from "../domain/shopping-list.js";
+import { normalizeProductName } from "../domain/product-name.js";
 
 interface QuickEntryFormProps {
   addLabel: string;

@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { HomeAssistantAiTaskClient } from "../../src/server/home-assistant-ai-task.js";
-import { startFakeHomeAssistant } from "../support/fake-home-assistant.js";
+import { startFakeHomeAssistant } from "../../src/dev-support/fake-home-assistant.js";
 
 test("the fake Home Assistant boundary implements the structured AI Task contract", async () => {
   const homeAssistant = await startFakeHomeAssistant({

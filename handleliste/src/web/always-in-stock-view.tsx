@@ -6,7 +6,7 @@ import type {
   AlwaysInStockSelectionInput,
   PackageUnit,
   Product,
-} from "../shared/shopping-list.js";
+} from "../domain/shopping-list.js";
 
 export interface AlwaysInStockLabels {
   addDefinition: string;

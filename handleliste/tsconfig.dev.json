@@ -7,5 +7,5 @@
     "rootDir": ".",
     "sourceMap": true
   },
-  "include": ["src/dev/**/*.ts"]
+  "include": ["src/dev/**/*.ts", "src/dev-support/**/*.ts"]
 }

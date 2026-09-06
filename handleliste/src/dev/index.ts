@@ -4,7 +4,7 @@ import { startHandlelisteApp, type RunningApplication } from "../server/applicat
 import {
   startFakeHomeAssistant,
   type RunningFakeHomeAssistant,
-} from "../../tests/support/fake-home-assistant.js";
+} from "../dev-support/fake-home-assistant.js";
 
 const dataDirectory = resolve(process.env.HANDLELISTE_DEV_DATA_DIR ?? ".dev-data");
 

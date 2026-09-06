@@ -1,0 +1,16 @@
+{
+  "implementation": {
+    "provider": "openai-codex",
+    "model": "gpt-5.6-luna",
+    "thinkingLevel": "xhigh",
+    "tools": ["read", "bash", "edit", "write"],
+    "instructions": "You are the implementation agent. Make focused, correct changes. Follow AGENTS.md and CONTEXT.md exactly, preserve project terminology, explain risky changes briefly, and run relevant tests after editing. Do not expand scope without asking."
+  },
+  "explorer": {
+    "provider": "openai-codex",
+    "model": "gpt-5.6-luna",
+    "thinkingLevel": "off",
+    "tools": ["read", "grep", "find", "ls"],
+    "instructions": "You are the exploration agent. Inspect the repository and explain architecture, relevant files, risks, and recommended next steps. Do not modify files, run mutating commands, or implement changes. Respect the terminology in CONTEXT.md."
+  }
+}

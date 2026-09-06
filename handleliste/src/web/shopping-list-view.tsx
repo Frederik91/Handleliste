@@ -1,13 +1,13 @@
 import { useState } from "react";
-import { packageUnits } from "../shared/package-option.js";
-import { normalizeProductName } from "../shared/product-name.js";
+import { packageUnits } from "../domain/package-option.js";
+import { normalizeProductName } from "../domain/product-name.js";
 import type {
   PackageUnit,
   Product,
   ShoppingItemEdit,
   ShoppingListItem,
   ShoppingListSnapshot,
-} from "../shared/shopping-list.js";
+} from "../domain/shopping-list.js";
 
 interface ShoppingListLabels {
   cancel: string;

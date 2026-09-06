@@ -1,51 +1,31 @@
-import { mkdirSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { ParsedQuickEntry, QuickEntryRepository } from "../domain/quick-entry.js";
-import { measurementDimensionFor } from "../shared/package-option.js";
-import { normalizeProductName } from "../shared/product-name.js";
-import { prepareShoppingListSchema } from "./shopping-list-schema.js";
+import { measurementDimensionFor } from "../domain/package-option.js";
+import { normalizeProductName } from "../domain/product-name.js";
 import type {
   AlwaysInStockDefinition,
   AlwaysInStockDefinitionInput,
   AlwaysInStockSelection,
   AlwaysInStockSelectionInput,
-  MeasurementDimension,
-  PackageUnit,
   Product,
   ShoppingItemEdit,
   ShoppingListItem,
   ShoppingListMutation,
   ShoppingListSnapshot,
-} from "../shared/shopping-list.js";
-
-interface ProductRow { id: number; name: string }
-interface PackageOptionRow {
-  id: number;
-  is_default: number;
-  measurement_dimension: MeasurementDimension;
-  product_id: number;
-  size: number;
-  unit: PackageUnit;
-}
-interface AlwaysInStockDefinitionRow {
-  archived: number;
-  default_quantity: number;
-  id: number;
-  package_option_id: number;
-  position: number;
-  product_id: number;
-}
+} from "../domain/shopping-list.js";
+import type {
+  AlwaysInStockDefinitionRow,
+  PackageOptionRow,
+  ProductRow,
+} from "./storage/shopping-list-rows.js";
+import { openShoppingListDatabase } from "./storage/open-shopping-list-database.js";
 
 export class ShoppingListStore implements QuickEntryRepository {
   readonly #database: DatabaseSync;
 
   constructor(dataDirectory: string) {
-    mkdirSync(dataDirectory, { recursive: true });
-    this.#database = new DatabaseSync(join(dataDirectory, "handleliste.sqlite"));
-    this.#database.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
-    prepareShoppingListSchema(this.#database);
+    this.#database = openShoppingListDatabase(dataDirectory);
   }
 
   addParsedQuickEntry(entry: ParsedQuickEntry, selectedProductId?: number): ShoppingListMutation {
