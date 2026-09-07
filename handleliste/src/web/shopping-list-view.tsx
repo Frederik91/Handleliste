@@ -1,3 +1,4 @@
+import { RecipeDemandSummary, type RecipePlanningLabels } from "./recipe-planning-view.js";
 import { useState } from "react";
 import { packageUnits } from "../domain/package-option.js";
 import { normalizeProductName } from "../domain/product-name.js";
@@ -9,7 +10,7 @@ import type {
   ShoppingListSnapshot,
 } from "../domain/shopping-list.js";
 
-interface ShoppingListLabels {
+interface ShoppingListLabels extends RecipePlanningLabels {
   cancel: string;
   complete: string;
   completed: string;
@@ -82,6 +83,7 @@ export function ShoppingListView({
                       <span>
                         {item.quantity} × {formatSize(item.packageOption.size)} {formatUnit(item.packageOption.unit, labels.unit)}
                       </span>
+                      {(item.recipeSources.baseline > 0 || item.recipeSources.generated > 0) ? <small className="recipe-sources">{labels.baseline} {item.recipeSources.baseline} · {labels.recipes} {item.recipeSources.generated}</small> : null}
                       <button
                         aria-label={labels.edit}
                         className="edit-item"
@@ -99,6 +101,13 @@ export function ShoppingListView({
               </li>
             ))}
           </ul>
+          {shoppingList.recipeDemands.filter((demand) => demand.productId === product.id).map((demand) => <RecipeDemandSummary key={demand.productId} demand={demand} labels={labels} />)}
+        </section>
+      ))}
+      {shoppingList.recipeDemands.filter((demand) => !activeItems.some((item) => item.product.id === demand.productId)).map((demand) => (
+        <section role="group" aria-label={shoppingList.products.find((product) => product.id === demand.productId)?.name} className="product-group" key={demand.productId}>
+          <h2>{shoppingList.products.find((product) => product.id === demand.productId)?.name}</h2>
+          <RecipeDemandSummary demand={demand} labels={labels} />
         </section>
       ))}
       {completedItems.length > 0 ? (
@@ -118,6 +127,7 @@ export function ShoppingListView({
                 <span>
                   {item.quantity} × {formatSize(item.packageOption.size)} {formatUnit(item.packageOption.unit, labels.unit)}
                 </span>
+                {(item.recipeSources.baseline > 0 || item.recipeSources.generated > 0) ? <small className="recipe-sources">{labels.baseline} {item.recipeSources.baseline} · {labels.recipes} {item.recipeSources.generated}</small> : null}
               </li>
             ))}
           </ul>

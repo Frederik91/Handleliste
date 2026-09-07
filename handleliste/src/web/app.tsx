@@ -1,3 +1,5 @@
+import { RecipeTripSelection } from "./recipe-planning-view.js";
+import type { RecipeSelectionInput } from "../domain/recipe-planning.js";
 import type { RecipeInput, RecipePreview } from "../domain/recipe.js";
 import { RecipeManagement } from "./recipe-view.js";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -41,6 +43,7 @@ export function App() {
   const [selectedProductId, setSelectedProductId] = useState<number>();
   const [addError, setAddError] = useState(false);
   const [definitionManagementOpen, setDefinitionManagementOpen] = useState(false);
+  const [recipeSelectionOpen, setRecipeSelectionOpen] = useState(false);
   const [recipeManagementOpen, setRecipeManagementOpen] = useState(false);
   const [tripSelectionOpen, setTripSelectionOpen] = useState(false);
   const [undoNotice, setUndoNotice] = useState<UndoNotice>();
@@ -323,6 +326,16 @@ export function App() {
     }
   }
 
+  async function saveRecipeSelections(selections: RecipeSelectionInput[]): Promise<boolean> {
+    try {
+      const response = await fetch("api/shopping-list/recipes", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ selections }) });
+      if (!response.ok) return false;
+      applyShoppingListSnapshot(await response.json() as ShoppingListSnapshot);
+      setUndoNotice(undefined);
+      return true;
+    } catch { return false; }
+  }
+
   async function startNewTrip() {
     if (!window.confirm(text.newTripWarning)) return;
     const response = await fetch("api/shopping-list/trips/new", { method: "POST" });
@@ -369,6 +382,7 @@ export function App() {
         />
         {addError ? <p className="error" role="alert">{text.addItemFailed}</p> : null}
         <div className="trip-actions">
+          <button onClick={() => setRecipeSelectionOpen(true)} type="button">{text.planRecipes}</button>
           <button onClick={() => setRecipeManagementOpen(true)} type="button">{text.manageRecipes}</button>
           <button onClick={() => setTripSelectionOpen(true)} type="button">{text.alwaysInStock}</button>
           <button onClick={() => setDefinitionManagementOpen(true)} type="button">{text.manageAlwaysInStock}</button>
@@ -377,7 +391,11 @@ export function App() {
             <button onClick={() => void clearCompleted()} type="button">{text.clearCompleted}</button>
           ) : null}
         </div>
-        {shoppingList.items.length === 0 ? (
+        {shoppingList.selectedRecipes.length > 0 ? <section aria-label={text.selectedRecipes} className="selected-recipes">
+          <h2>{text.selectedRecipes}</h2>
+          {shoppingList.selectedRecipes.map((recipe) => <span key={recipe.recipeId}>{recipe.name} × {recipe.count}</span>)}
+        </section> : null}
+        {shoppingList.items.length === 0 && shoppingList.recipeDemands.length === 0 ? (
           <div className="empty-state" aria-labelledby="empty-title">
             <div className="cart" aria-hidden="true">🛒</div>
             <h2 id="empty-title">{text.emptyTitle}</h2>
@@ -413,6 +431,7 @@ export function App() {
         revision={shoppingList.revision}
         selections={shoppingList.alwaysInStockSelections}
       />
+      {recipeSelectionOpen ? <RecipeTripSelection open={recipeSelectionOpen} onClose={() => setRecipeSelectionOpen(false)} onSave={saveRecipeSelections} selections={shoppingList.selectedRecipes} recipes={shoppingList.recipes} labels={text} /> : null}
       <RecipeManagement
         labels={text}
         onArchive={archiveRecipe}

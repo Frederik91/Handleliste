@@ -83,6 +83,18 @@ export function prepareShoppingListSchema(database: DatabaseSync): void {
 
   migrateShoppingListSchema(database);
   database.exec(`
+    CREATE TABLE IF NOT EXISTS recipe_plan (
+      id INTEGER PRIMARY KEY CHECK (id = 1), selections TEXT NOT NULL
+    ) STRICT;
+    CREATE TABLE IF NOT EXISTS recipe_baseline (
+      id INTEGER PRIMARY KEY, item_id INTEGER UNIQUE REFERENCES shopping_items(id) ON DELETE SET NULL,
+      product_id INTEGER NOT NULL REFERENCES products(id), quantity REAL NOT NULL,
+      amount REAL NOT NULL, unit TEXT NOT NULL
+    ) STRICT;
+    CREATE TABLE IF NOT EXISTS recipe_generated (
+      item_id INTEGER PRIMARY KEY REFERENCES shopping_items(id) ON DELETE CASCADE,
+      quantity INTEGER NOT NULL CHECK (quantity > 0)
+    ) STRICT;
     CREATE TABLE IF NOT EXISTS shopping_item_contributions (
       shopping_item_id INTEGER NOT NULL REFERENCES shopping_items(id) ON DELETE CASCADE,
       source_kind TEXT NOT NULL CHECK (source_kind = 'always-in-stock'),

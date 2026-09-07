@@ -153,6 +153,11 @@ export function registerRoutes(
     async (request) => context.shoppingList.previewRecipe(request.params.recipeId, request.body.count),
   );
 
+  routes.put("/api/shopping-list/recipes", {
+    schema: { body: Type.Object({ selections: Type.Array(Type.Object({ recipeId: positiveInteger, count: positiveInteger })) }) },
+    schemaErrorFormatter: validationError("Recipe count must be a positive whole number"),
+  }, async (request) => changed(context, () => context.shoppingList.replaceRecipeSelections(request.body.selections)));
+
   routes.get("/api/shopping-list/always-in-stock", async () => {
     const snapshot = context.shoppingList.getSnapshot();
     return {

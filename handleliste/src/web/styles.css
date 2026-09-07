@@ -557,3 +557,14 @@ select {
     grid-template-columns: 1fr;
   }
 }
+
+.trip-actions { flex-wrap: wrap; }
+.recipe-sources { font-size: 0.75rem; color: var(--secondary-text-color, #666); }
+.recipe-demand { font-size: 0.85rem; color: var(--secondary-text-color, #666); padding: 0 0.75rem 0.75rem; }
+.recipe-demand p { margin: 0.4rem 0; }
+.recipe-demand summary { cursor: pointer; }
+.recipe-selection { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin: 1rem 0; }
+.recipe-selection input[type=number] { width: 5rem; margin-left: 0.5rem; }
+.selected-recipes { font-size: 0.85rem; }
+.selected-recipes h2 { font-size: 1rem; }
+.selected-recipes span { display: inline-block; margin: 0 1rem 0.5rem 0; }

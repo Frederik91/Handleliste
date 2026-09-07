@@ -1,6 +1,10 @@
 export type Locale = "en" | "nb";
 export const translations = {
   en: {
+    planRecipes: "Plan from Recipes", selectedRecipes: "Selected Recipes", select: "Select",
+    recipeSelectionFailed: "Could not plan Recipes. Check counts and compatible default packages.",
+    recipesNeed: "Recipes need", outsideRecipes: "Outside recipes", missingRecipes: "Missing for recipes",
+    recipeBreakdown: "Recipe breakdown", clearedPurchased: "Cleared Purchased Supply", baseline: "Baseline",
     add: "Add", addDefinition: "Add definition", addIngredient: "Add ingredient", addItem: "Add item",
     addItemFailed: "Could not add the item. Try again.", addRecipe: "Add recipe", alwaysInStock: "Always in Stock",
     amount: "Amount", archive: "Archive", archived: "Archived", cancel: "Cancel", clearCompleted: "Clear completed",
@@ -22,6 +26,10 @@ export const translations = {
     submitAlwaysInStock: "Add to Shopping List", undo: "Undo", unit: "unit", unitLabel: "Unit",
   },
   nb: {
+    planRecipes: "Planlegg fra oppskrifter", selectedRecipes: "Valgte oppskrifter", select: "Velg",
+    recipeSelectionFailed: "Kunne ikke planlegge oppskrifter. Kontroller antall og standardpakninger.",
+    recipesNeed: "Oppskrifter trenger", outsideRecipes: "Utenom oppskrifter", missingRecipes: "Mangler til oppskrifter",
+    recipeBreakdown: "Oppskriftsdetaljer", clearedPurchased: "Fjernede innkjøpte varer", baseline: "Utgangspunkt",
     add: "Legg til", addDefinition: "Legg til definisjon", addIngredient: "Legg til ingrediens", addItem: "Legg til vare",
     addItemFailed: "Kunne ikke legge til varen. Prøv igjen.", addRecipe: "Legg til oppskrift", alwaysInStock: "Alltid på lager",
     amount: "Mengde", archive: "Arkiver", archived: "Arkivert", cancel: "Avbryt", clearCompleted: "Fjern fullførte",

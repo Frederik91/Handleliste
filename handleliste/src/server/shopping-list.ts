@@ -1,3 +1,5 @@
+import { RecipePlanningStore, RecipePlanningError } from "./recipe-planning.js";
+import type { RecipeSelectionInput } from "../domain/recipe-planning.js";
 import { calculateRecipePreview, RecipeMeasurementError } from "../domain/recipe-measurement.js";
 import { recipeUnitDimension, type Recipe, type RecipeInput, type RecipePreview, type RecipeUnit } from "../domain/recipe.js";
 import { randomUUID } from "node:crypto";
@@ -33,9 +35,11 @@ interface RecipeRow {
 
 export class ShoppingListStore implements QuickEntryRepository {
   readonly #database: DatabaseSync;
+  readonly #recipePlanning: RecipePlanningStore;
 
   constructor(dataDirectory: string) {
     this.#database = openShoppingListDatabase(dataDirectory);
+    this.#recipePlanning = new RecipePlanningStore(this.#database);
   }
 
   addParsedQuickEntry(entry: ParsedQuickEntry, selectedProductId?: number): ShoppingListMutation {
@@ -114,6 +118,7 @@ export class ShoppingListStore implements QuickEntryRepository {
       const packageOption = product?.packageOptions.find((option) => option.id === item.package_option_id);
       if (!product || !packageOption) throw new Error("Shopping Item references missing catalog data");
       const base = {
+        recipeSources: this.#recipePlanning.sources(item.id),
         id: item.id,
         packageOption,
         product: { id: product.id, name: product.name },
@@ -132,8 +137,24 @@ export class ShoppingListStore implements QuickEntryRepository {
       items,
       products,
       recipes: this.#getRecipes(),
+      selectedRecipes: this.#recipePlanning.selections(),
+      recipeDemands: this.#recipePlanning.demands(),
       revision: state.revision,
     };
+  }
+
+  replaceRecipeSelections(selections: readonly RecipeSelectionInput[]): ShoppingListSnapshot {
+    this.#database.exec("BEGIN IMMEDIATE");
+    try {
+      this.#recipePlanning.replace(selections, this.#getRecipes());
+      this.#incrementRevision();
+      this.#database.exec("COMMIT");
+    } catch (error) {
+      this.#database.exec("ROLLBACK");
+      if (error instanceof RecipePlanningError || error instanceof RecipeMeasurementError) throw new ShoppingListCommandError(error.message);
+      throw error;
+    }
+    return this.getSnapshot();
   }
 
   createRecipe(input: RecipeInput): ShoppingListSnapshot {
@@ -371,8 +392,7 @@ export class ShoppingListStore implements QuickEntryRepository {
         this.#database.prepare("UPDATE shopping_items SET quantity = ? WHERE id = ?")
           .run(edit.quantity, edit.itemId);
       } else {
-        this.#database.prepare("DELETE FROM shopping_items WHERE id = ?").run(edit.itemId);
-        this.#database.prepare(`
+        const target = this.#database.prepare(`
           INSERT INTO shopping_items
             (product_id, package_option_id, quantity, state, active_position)
           VALUES (
@@ -381,7 +401,14 @@ export class ShoppingListStore implements QuickEntryRepository {
           )
           ON CONFLICT (product_id, package_option_id) WHERE state = 'active'
           DO UPDATE SET quantity = quantity + excluded.quantity
-        `).run(resolvedProduct.product.id, targetOption.id, edit.quantity);
+          RETURNING id
+        `).get(resolvedProduct.product.id, targetOption.id, edit.quantity);
+        if (current.product_id === resolvedProduct.product.id) {
+          this.#database.prepare("UPDATE recipe_generated SET quantity = MIN(quantity, ?) WHERE item_id = ?").run(edit.quantity, edit.itemId);
+          this.#recipePlanning.mergeItems(edit.itemId, Number(target?.id));
+          this.#database.prepare("UPDATE shopping_item_contributions SET shopping_item_id = ? WHERE shopping_item_id = ?").run(Number(target?.id), edit.itemId);
+        }
+        this.#database.prepare("DELETE FROM shopping_items WHERE id = ?").run(edit.itemId);
         this.#database.prepare(`
           DELETE FROM package_options WHERE id = ? AND is_default = 0
           AND NOT EXISTS (SELECT 1 FROM shopping_items WHERE package_option_id = ?)
@@ -424,6 +451,8 @@ export class ShoppingListStore implements QuickEntryRepository {
               SET quantity = quantity + (SELECT quantity FROM shopping_items WHERE id = ?)
               WHERE id = ?
             `).run(duplicate.id, itemId);
+            this.#recipePlanning.mergeItems(duplicate.id, itemId);
+            this.#database.prepare("UPDATE shopping_item_contributions SET shopping_item_id = ? WHERE shopping_item_id = ?").run(itemId, duplicate.id);
             this.#database.prepare("DELETE FROM shopping_items WHERE id = ?").run(duplicate.id);
           }
           this.#database.prepare(`
@@ -494,6 +523,9 @@ export class ShoppingListStore implements QuickEntryRepository {
       this.#database.exec(`
         DELETE FROM quick_entry_undo;
         DELETE FROM clear_completed_undo;
+        DELETE FROM recipe_plan;
+        DELETE FROM recipe_baseline;
+        DELETE FROM recipe_generated;
         DELETE FROM always_in_stock_selections;
         DELETE FROM shopping_items;
       `);

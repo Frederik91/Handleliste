@@ -1,3 +1,4 @@
+import type { ItemRecipeSources, RecipeDemand, SelectedRecipe } from "./recipe-planning.js";
 import type { Recipe } from "./recipe.js";
 export type PackageUnit = "unit" | "piece" | "g" | "kg" | "ml" | "cl" | "dl" | "L" | "tsp" | "tbsp";
 
@@ -18,6 +19,7 @@ export interface Product {
 }
 
 interface ShoppingListItemBase {
+  recipeSources: ItemRecipeSources;
   id: number;
   packageOption: PackageOption;
   product: Pick<Product, "id" | "name">;
@@ -60,6 +62,8 @@ export interface ShoppingListSnapshot {
   items: ShoppingListItem[];
   products: Product[];
   recipes: Recipe[];
+  selectedRecipes: SelectedRecipe[];
+  recipeDemands: RecipeDemand[];
   revision: number;
 }
 
