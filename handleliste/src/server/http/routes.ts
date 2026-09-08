@@ -1,3 +1,5 @@
+import { recipeInputSchema, positiveIntegerSchema } from "../../domain/recipe.js";
+import { recipeSelectionInputSchema } from "../../domain/recipe-planning.js";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import fastifyStatic from "@fastify/static";
@@ -25,7 +27,7 @@ export interface RequestContext {
 }
 
 const nonBlankString = Type.String({ minLength: 1, pattern: ".*\\S.*" });
-const positiveInteger = Type.Integer({ minimum: 1 });
+const positiveInteger = positiveIntegerSchema;
 const packageUnit = Type.Union([
   Type.Literal("unit"),
   Type.Literal("piece"),
@@ -54,26 +56,7 @@ const alwaysInStockSelectionsBody = Type.Object({
   })),
 });
 
-const recipeUnit = Type.Union([
-  Type.Literal("g"),
-  Type.Literal("kg"),
-  Type.Literal("ml"),
-  Type.Literal("cl"),
-  Type.Literal("dl"),
-  Type.Literal("L"),
-  Type.Literal("tsp"),
-  Type.Literal("tbsp"),
-  Type.Literal("piece"),
-]);
-const recipeBody = Type.Object({
-  name: nonBlankString,
-  note: Type.Optional(Type.String()),
-  requirements: Type.Array(Type.Object({
-    amount: Type.Number({ exclusiveMinimum: 0 }),
-    productId: positiveInteger,
-    unit: recipeUnit,
-  }), { minItems: 1 }),
-});
+const recipeBody = recipeInputSchema;
 
 export function registerRoutes(
   application: FastifyInstance,
@@ -122,7 +105,7 @@ export function registerRoutes(
     },
     async (request) => changed(
       context,
-      () => context.shoppingList.updateRecipe(request.params.recipeId, request.body),
+      () => context.shoppingList.updateRecipe({ recipeId: request.params.recipeId, input: request.body }),
     ),
   );
 
@@ -137,7 +120,7 @@ export function registerRoutes(
     },
     async (request) => changed(
       context,
-      () => context.shoppingList.archiveRecipe(request.params.recipeId, request.body.archived),
+      () => context.shoppingList.archiveRecipe({ recipeId: request.params.recipeId, archived: request.body.archived }),
     ),
   );
 
@@ -150,11 +133,11 @@ export function registerRoutes(
       },
       schemaErrorFormatter: validationError("Recipe count must be a positive whole number"),
     },
-    async (request) => context.shoppingList.previewRecipe(request.params.recipeId, request.body.count),
+    async (request) => context.shoppingList.previewRecipe({ recipeId: request.params.recipeId, count: request.body.count }),
   );
 
   routes.put("/api/shopping-list/recipes", {
-    schema: { body: Type.Object({ selections: Type.Array(Type.Object({ recipeId: positiveInteger, count: positiveInteger })) }) },
+    schema: { body: Type.Object({ selections: Type.Array(recipeSelectionInputSchema) }) },
     schemaErrorFormatter: validationError("Recipe count must be a positive whole number"),
   }, async (request) => changed(context, () => context.shoppingList.replaceRecipeSelections(request.body.selections)));
 

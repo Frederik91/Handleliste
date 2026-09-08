@@ -1,3 +1,6 @@
+import { Value } from "typebox/value";
+import { recipePreviewSchema } from "../domain/recipe.js";
+import { parseShoppingListSnapshot } from "../domain/shopping-list.js";
 import { RecipeTripSelection } from "./recipe-planning-view.js";
 import type { RecipeSelectionInput } from "../domain/recipe-planning.js";
 import type { RecipeInput, RecipePreview } from "../domain/recipe.js";
@@ -277,7 +280,7 @@ export function App() {
     }
   }
 
-  async function saveRecipeRequest(url: string, method: "PATCH" | "POST", input: RecipeInput): Promise<boolean> {
+  async function saveRecipeRequest({ url, method, input }: { url: string; method: "PATCH" | "POST"; input: RecipeInput }): Promise<boolean> {
     try {
       const response = await fetch(url, {
         body: JSON.stringify(input),
@@ -285,21 +288,21 @@ export function App() {
         method,
       });
       if (!response.ok) return false;
-      return applyShoppingListSnapshot(await response.json() as ShoppingListSnapshot);
+      return applyShoppingListSnapshot(parseShoppingListSnapshot(await response.json()));
     } catch {
       return false;
     }
   }
 
   function createRecipe(input: RecipeInput): Promise<boolean> {
-    return saveRecipeRequest("api/recipes", "POST", input);
+    return saveRecipeRequest({ url: "api/recipes", method: "POST", input });
   }
 
-  function updateRecipe(recipeId: number, input: RecipeInput): Promise<boolean> {
-    return saveRecipeRequest(`api/recipes/${recipeId}`, "PATCH", input);
+  function updateRecipe({ recipeId, input }: { recipeId: number; input: RecipeInput }): Promise<boolean> {
+    return saveRecipeRequest({ url: `api/recipes/${recipeId}`, method: "PATCH", input });
   }
 
-  async function archiveRecipe(recipeId: number, archived: boolean): Promise<boolean> {
+  async function archiveRecipe({ recipeId, archived }: { recipeId: number; archived: boolean }): Promise<boolean> {
     try {
       const response = await fetch(`api/recipes/${recipeId}/archive`, {
         body: JSON.stringify({ archived }),
@@ -307,20 +310,20 @@ export function App() {
         method: "POST",
       });
       if (!response.ok) return false;
-      return applyShoppingListSnapshot(await response.json() as ShoppingListSnapshot);
+      return applyShoppingListSnapshot(parseShoppingListSnapshot(await response.json()));
     } catch {
       return false;
     }
   }
 
-  async function previewRecipe(recipeId: number, count: number): Promise<RecipePreview | undefined> {
+  async function previewRecipe({ recipeId, count }: { recipeId: number; count: number }): Promise<RecipePreview | undefined> {
     try {
       const response = await fetch(`api/recipes/${recipeId}/preview`, {
         body: JSON.stringify({ count }),
         headers: { "content-type": "application/json" },
         method: "POST",
       });
-      return response.ok ? await response.json() as RecipePreview : undefined;
+      return response.ok ? Value.Parse(recipePreviewSchema, await response.json()) : undefined;
     } catch {
       return undefined;
     }
@@ -330,7 +333,7 @@ export function App() {
     try {
       const response = await fetch("api/shopping-list/recipes", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ selections }) });
       if (!response.ok) return false;
-      applyShoppingListSnapshot(await response.json() as ShoppingListSnapshot);
+      applyShoppingListSnapshot(parseShoppingListSnapshot(await response.json()));
       setUndoNotice(undefined);
       return true;
     } catch { return false; }

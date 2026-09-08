@@ -1,7 +1,11 @@
+import { Type } from "typebox";
+import { Value } from "typebox/value";
+import { measurementDimensionSchema } from "../domain/shopping-list.js";
+import { recipeRowSchema, recipeRequirementRowSchema, type RecipeRow } from "./storage/shopping-list-rows.js";
 import { RecipePlanningStore, RecipePlanningError } from "./recipe-planning.js";
 import type { RecipeSelectionInput } from "../domain/recipe-planning.js";
 import { calculateRecipePreview, RecipeMeasurementError } from "../domain/recipe-measurement.js";
-import { recipeUnitDimension, type Recipe, type RecipeInput, type RecipePreview, type RecipeUnit } from "../domain/recipe.js";
+import { recipeUnitDimension, type Recipe, type RecipeInput, type RecipePreview } from "../domain/recipe.js";
 import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import type { ParsedQuickEntry, QuickEntryRepository } from "../domain/quick-entry.js";
@@ -13,7 +17,6 @@ import type {
   AlwaysInStockSelection,
   AlwaysInStockSelectionInput,
   Product,
-  MeasurementDimension,
   ShoppingItemEdit,
   ShoppingListItem,
   ShoppingListMutation,
@@ -25,13 +28,6 @@ import type {
   ProductRow,
 } from "./storage/shopping-list-rows.js";
 import { openShoppingListDatabase } from "./storage/open-shopping-list-database.js";
-
-interface RecipeRow {
-  archived: number;
-  id: number;
-  name: string;
-  note: string | null;
-}
 
 export class ShoppingListStore implements QuickEntryRepository {
   readonly #database: DatabaseSync;
@@ -146,7 +142,7 @@ export class ShoppingListStore implements QuickEntryRepository {
   replaceRecipeSelections(selections: readonly RecipeSelectionInput[]): ShoppingListSnapshot {
     this.#database.exec("BEGIN IMMEDIATE");
     try {
-      this.#recipePlanning.replace(selections, this.#getRecipes());
+      this.#recipePlanning.replace({ inputs: selections, recipes: this.#getRecipes() });
       this.#incrementRevision();
       this.#database.exec("COMMIT");
     } catch (error) {
@@ -163,7 +159,7 @@ export class ShoppingListStore implements QuickEntryRepository {
       const normalized = this.#validateRecipeInput(input);
       const result = this.#database.prepare("INSERT INTO recipes (name, note) VALUES (?, ?)")
         .run(normalized.name, normalized.note ?? null);
-      this.#replaceRecipeRequirements(Number(result.lastInsertRowid), normalized.requirements);
+      this.#replaceRecipeRequirements({ recipeId: Number(result.lastInsertRowid), requirements: normalized.requirements });
       this.#incrementRevision();
       this.#database.exec("COMMIT");
     } catch (error) {
@@ -173,14 +169,14 @@ export class ShoppingListStore implements QuickEntryRepository {
     return this.getSnapshot();
   }
 
-  updateRecipe(recipeId: number, input: RecipeInput): ShoppingListSnapshot {
+  updateRecipe({ recipeId, input }: { recipeId: number; input: RecipeInput }): ShoppingListSnapshot {
     this.#database.exec("BEGIN IMMEDIATE");
     try {
       this.#getRecipe(recipeId);
       const normalized = this.#validateRecipeInput(input);
       this.#database.prepare("UPDATE recipes SET name = ?, note = ? WHERE id = ?")
         .run(normalized.name, normalized.note ?? null, recipeId);
-      this.#replaceRecipeRequirements(recipeId, normalized.requirements);
+      this.#replaceRecipeRequirements({ recipeId, requirements: normalized.requirements });
       this.#incrementRevision();
       this.#database.exec("COMMIT");
     } catch (error) {
@@ -190,7 +186,7 @@ export class ShoppingListStore implements QuickEntryRepository {
     return this.getSnapshot();
   }
 
-  archiveRecipe(recipeId: number, archived: boolean): ShoppingListSnapshot {
+  archiveRecipe({ recipeId, archived }: { recipeId: number; archived: boolean }): ShoppingListSnapshot {
     this.#database.exec("BEGIN IMMEDIATE");
     try {
       const recipe = this.#getRecipe(recipeId);
@@ -207,11 +203,11 @@ export class ShoppingListStore implements QuickEntryRepository {
     return this.getSnapshot();
   }
 
-  previewRecipe(recipeId: number, count: number): RecipePreview {
+  previewRecipe({ recipeId, count }: { recipeId: number; count: number }): RecipePreview {
     const recipe = this.#getRecipes().find((candidate) => candidate.id === recipeId);
     if (!recipe) throw new ShoppingListCommandError("Recipe does not exist");
     try {
-      return { count, lines: calculateRecipePreview(recipe.requirements, count), recipeId };
+      return { count, lines: calculateRecipePreview({ requirements: recipe.requirements, count }), recipeId };
     } catch (error) {
       if (error instanceof RecipeMeasurementError) throw new ShoppingListCommandError(error.message);
       throw error;
@@ -405,7 +401,7 @@ export class ShoppingListStore implements QuickEntryRepository {
         `).get(resolvedProduct.product.id, targetOption.id, edit.quantity);
         if (current.product_id === resolvedProduct.product.id) {
           this.#database.prepare("UPDATE recipe_generated SET quantity = MIN(quantity, ?) WHERE item_id = ?").run(edit.quantity, edit.itemId);
-          this.#recipePlanning.mergeItems(edit.itemId, Number(target?.id));
+          this.#recipePlanning.mergeItems({ fromId: edit.itemId, intoId: Number(target?.id) });
           this.#database.prepare("UPDATE shopping_item_contributions SET shopping_item_id = ? WHERE shopping_item_id = ?").run(Number(target?.id), edit.itemId);
         }
         this.#database.prepare("DELETE FROM shopping_items WHERE id = ?").run(edit.itemId);
@@ -451,7 +447,7 @@ export class ShoppingListStore implements QuickEntryRepository {
               SET quantity = quantity + (SELECT quantity FROM shopping_items WHERE id = ?)
               WHERE id = ?
             `).run(duplicate.id, itemId);
-            this.#recipePlanning.mergeItems(duplicate.id, itemId);
+            this.#recipePlanning.mergeItems({ fromId: duplicate.id, intoId: itemId });
             this.#database.prepare("UPDATE shopping_item_contributions SET shopping_item_id = ? WHERE shopping_item_id = ?").run(itemId, duplicate.id);
             this.#database.prepare("DELETE FROM shopping_items WHERE id = ?").run(duplicate.id);
           }
@@ -622,18 +618,13 @@ export class ShoppingListStore implements QuickEntryRepository {
   }
 
   #getRecipes(): Recipe[] {
-    const recipes = this.#database.prepare(`
+    const recipes = Value.Parse(Type.Array(recipeRowSchema), this.#database.prepare(`
       SELECT id, name, note, archived FROM recipes ORDER BY id
-    `).all() as unknown as RecipeRow[];
-    const requirements = this.#database.prepare(`
+    `).all());
+    const requirements = Value.Parse(Type.Array(recipeRequirementRowSchema), this.#database.prepare(`
       SELECT recipe_id, product_id, amount, unit
       FROM recipe_requirements ORDER BY recipe_id, position
-    `).all() as unknown as Array<{
-      amount: number;
-      product_id: number;
-      recipe_id: number;
-      unit: RecipeUnit;
-    }>;
+    `).all());
     return recipes.map((recipe) => ({
       archived: recipe.archived === 1,
       id: recipe.id,
@@ -651,9 +642,9 @@ export class ShoppingListStore implements QuickEntryRepository {
 
   #getRecipe(recipeId: number): RecipeRow {
     const recipe = this.#database.prepare("SELECT id, name, note, archived FROM recipes WHERE id = ?")
-      .get(recipeId) as RecipeRow | undefined;
+      .get(recipeId);
     if (!recipe) throw new ShoppingListCommandError("Recipe does not exist");
-    return recipe;
+    return Value.Parse(recipeRowSchema, recipe);
   }
 
   #validateRecipeInput(input: RecipeInput): RecipeInput {
@@ -666,16 +657,16 @@ export class ShoppingListStore implements QuickEntryRepository {
     for (const requirement of input.requirements) {
       this.#getProduct(requirement.productId);
       const dimension = recipeUnitDimension(requirement.unit);
-      const dimensions = this.#database.prepare(`
+      const dimensions = Value.Parse(Type.Array(Type.Object({ measurement_dimension: measurementDimensionSchema })), this.#database.prepare(`
         SELECT DISTINCT measurement_dimension
         FROM package_options WHERE product_id = ? AND archived = 0
-      `).all(requirement.productId) as unknown as Array<{ measurement_dimension: MeasurementDimension }>;
+      `).all(requirement.productId));
       if (!dimensions.some((candidate) => candidate.measurement_dimension === dimension)) {
         throw new ShoppingListCommandError("Ingredient unit is incompatible with the Product's Package Options");
       }
     }
     try {
-      calculateRecipePreview(input.requirements, 1);
+      calculateRecipePreview({ requirements: input.requirements, count: 1 });
     } catch (error) {
       if (error instanceof RecipeMeasurementError) throw new ShoppingListCommandError(error.message);
       throw error;
@@ -683,7 +674,7 @@ export class ShoppingListStore implements QuickEntryRepository {
     return { name, ...(note ? { note } : {}), requirements: input.requirements.map((requirement) => ({ ...requirement })) };
   }
 
-  #replaceRecipeRequirements(recipeId: number, requirements: readonly RecipeInput["requirements"][number][]): void {
+  #replaceRecipeRequirements({ recipeId, requirements }: { recipeId: number; requirements: readonly RecipeInput["requirements"][number][] }): void {
     this.#database.prepare("DELETE FROM recipe_requirements WHERE recipe_id = ?").run(recipeId);
     const insert = this.#database.prepare(`
       INSERT INTO recipe_requirements (recipe_id, position, product_id, amount, unit)

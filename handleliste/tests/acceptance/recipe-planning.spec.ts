@@ -244,3 +244,21 @@ test("retains generated source when changing to another existing Package Option"
     await expect(milk.getByRole("listitem")).toHaveCount(1);
   } finally { await system.close(); }
 });
+
+test("keeps the current trip when a planning response is malformed", async ({ page }) => {
+  const system = await startHandlelisteTestSystem();
+  try {
+    const ha = await system.addHomeAssistant();
+    await page.goto(ha.ingressUrl);
+    await add(page, "Milk 1L");
+    await recipe(page, "Custard", "Milk", "1500", "ml");
+    await page.route("**/api/shopping-list/recipes", (route) => route.fulfill({ json: { revision: 999 } }));
+    await page.getByRole("button", { name: "Plan from Recipes" }).click();
+    const dialog = page.getByRole("dialog", { name: "Plan from Recipes" });
+    await dialog.getByRole("checkbox", { name: "Select Custard" }).check();
+    await dialog.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(dialog.getByRole("alert")).toContainText("Could not plan Recipes");
+    await dialog.getByRole("button", { name: "Close" }).click();
+    await expect(page.getByRole("group", { name: "Milk", exact: true })).toContainText("1 × 1 L");
+  } finally { await system.close(); }
+});

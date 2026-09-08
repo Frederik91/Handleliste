@@ -33,11 +33,11 @@ export interface RecipeLabels {
 
 interface RecipeManagementProps {
   labels: RecipeLabels;
-  onArchive(recipeId: number, archived: boolean): Promise<boolean>;
+  onArchive(input: { recipeId: number; archived: boolean }): Promise<boolean>;
   onClose(): void;
   onCreate(input: RecipeInput): Promise<boolean>;
-  onPreview(recipeId: number, count: number): Promise<RecipePreview | undefined>;
-  onUpdate(recipeId: number, input: RecipeInput): Promise<boolean>;
+  onPreview(input: { recipeId: number; count: number }): Promise<RecipePreview | undefined>;
+  onUpdate(input: { recipeId: number; input: RecipeInput }): Promise<boolean>;
   open: boolean;
   products: readonly Product[];
   recipes: readonly Recipe[];
@@ -119,7 +119,7 @@ export function RecipeManagement({
     });
   }
 
-  function updateRequirement(index: number, update: Partial<IngredientRequirement>) {
+  function updateRequirement({ index, update }: { index: number; update: Partial<IngredientRequirement> }) {
     setEditor((current) => current && ({
       ...current,
       requirements: current.requirements.map((requirement, requirementIndex) => (
@@ -143,7 +143,7 @@ export function RecipeManagement({
     } satisfies RecipeInput;
     const saved = editor.recipeId === undefined
       ? await onCreate(input)
-      : await onUpdate(editor.recipeId, input);
+      : await onUpdate({ recipeId: editor.recipeId, input });
     if (saved) {
       setEditor(undefined);
       setSaveError(false);
@@ -152,9 +152,9 @@ export function RecipeManagement({
     }
   }
 
-  async function showPreview(recipeId: number, count: number) {
+  async function showPreview({ recipeId, count }: { recipeId: number; count: number }) {
     setEditor(undefined);
-    setPreview({ count, recipeId, result: await onPreview(recipeId, count) });
+    setPreview({ count, recipeId, result: await onPreview({ recipeId, count }) });
   }
 
   return (
@@ -188,9 +188,9 @@ export function RecipeManagement({
               {recipe.archived ? <small>{labels.archived}</small> : null}
             </div>
             <div className="always-in-stock-definition-actions">
-              <button aria-label={`${labels.preview} ${recipe.name}`} disabled={recipe.archived} onClick={() => void showPreview(recipe.id, 1)} type="button">{labels.preview}</button>
+              <button aria-label={`${labels.preview} ${recipe.name}`} disabled={recipe.archived} onClick={() => void showPreview({ recipeId: recipe.id, count: 1 })} type="button">{labels.preview}</button>
               <button aria-label={`${labels.editRecipe} ${recipe.name}`} onClick={() => startEdit(recipe)} type="button">{labels.editRecipe}</button>
-              <button aria-label={`${recipe.archived ? labels.restore : labels.archive} ${recipe.name}`} onClick={() => void onArchive(recipe.id, !recipe.archived)} type="button">
+              <button aria-label={`${recipe.archived ? labels.restore : labels.archive} ${recipe.name}`} onClick={() => void onArchive({ recipeId: recipe.id, archived: !recipe.archived })} type="button">
                 {recipe.archived ? labels.restore : labels.archive}
               </button>
             </div>
@@ -208,16 +208,16 @@ export function RecipeManagement({
                 <legend>{labels.ingredient} {index + 1}</legend>
                 <label>
                   <span>{labels.product}</span>
-                  <select aria-label={labels.product} onChange={(event) => updateRequirement(index, { productId: Number(event.target.value) })} required value={requirement.productId || ""}>
+                  <select aria-label={labels.product} onChange={(event) => updateRequirement({ index, update: { productId: Number(event.target.value) } })} required value={requirement.productId || ""}>
                     <option value="">{labels.product}</option>
                     {products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}
                   </select>
                 </label>
-                <label><span>{labels.amount}</span><input aria-label={labels.amount} min="0.000001" onChange={(event) => updateRequirement(index, { amount: Number(event.target.value) })} required step="any" type="number" value={requirement.amount} /></label>
+                <label><span>{labels.amount}</span><input aria-label={labels.amount} min="0.000001" onChange={(event) => updateRequirement({ index, update: { amount: Number(event.target.value) } })} required step="any" type="number" value={requirement.amount} /></label>
                 <label>
                   <span>{labels.unitLabel}</span>
                   <select aria-label={labels.unitLabel} onChange={(event) => {
-                    if (isRecipeUnit(event.target.value)) updateRequirement(index, { unit: event.target.value });
+                    if (isRecipeUnit(event.target.value)) updateRequirement({ index, update: { unit: event.target.value } });
                   }} value={requirement.unit}>
                     {recipeUnits.map((unit) => <option key={unit} value={unit}>{unit}</option>)}
                   </select>
@@ -236,7 +236,7 @@ export function RecipeManagement({
       ) : null}
       {preview ? (
         <section aria-label={labels.recipePreview} className="recipe-preview">
-          <label><span>{labels.recipeCount}</span><input aria-label={labels.recipeCount} min="1" onChange={(event) => void showPreview(preview.recipeId, Number(event.target.value))} step="1" type="number" value={preview.count} /></label>
+          <label><span>{labels.recipeCount}</span><input aria-label={labels.recipeCount} min="1" onChange={(event) => void showPreview({ recipeId: preview.recipeId, count: Number(event.target.value) })} step="1" type="number" value={preview.count} /></label>
           <ul>
             {preview.result?.lines.map((line) => {
               const product = products.find((candidate) => candidate.id === line.productId);

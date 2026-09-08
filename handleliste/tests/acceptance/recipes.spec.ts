@@ -1,3 +1,4 @@
+import { parseShoppingListSnapshot } from "../../src/domain/shopping-list.js";
 import { expect, test } from "@playwright/test";
 import {
   FRIDA,
@@ -87,10 +88,9 @@ test("rejects incompatible recipe dimensions transactionally", async ({ page }) 
     const quickEntry = page.getByRole("combobox", { name: "Add item" });
     await quickEntry.fill("Tomato 1kg");
     await quickEntry.press("Enter");
-    const productId = await page.evaluate(async () => {
-      const snapshot = await (await fetch("api/shopping-list")).json() as { products: Array<{ id: number }> };
-      return snapshot.products[0]!.id;
-    });
+    const added = parseShoppingListSnapshot(await page.evaluate(async () => (await fetch("api/shopping-list")).json()));
+    const productId = added.products[0]?.id;
+    if (productId === undefined) throw new Error("Quick Entry did not create the Product");
     await page.evaluate(async (selectedProductId) => {
       await fetch("api/shopping-list/items", {
         body: JSON.stringify({ entry: "Tomato 1L", productId: selectedProductId }),

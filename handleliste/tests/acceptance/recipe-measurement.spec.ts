@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import { calculateRecipePreview, RecipeMeasurementError } from "../../src/domain/recipe-measurement.js";
 
 test("converts every supported Recipe unit to its canonical dimension", () => {
-  const lines = calculateRecipePreview([
+  const lines = calculateRecipePreview({ requirements: [
     { amount: 2, productId: 1, unit: "kg" },
     { amount: 3, productId: 1, unit: "g" },
     { amount: 1, productId: 2, unit: "L" },
@@ -12,7 +12,7 @@ test("converts every supported Recipe unit to its canonical dimension", () => {
     { amount: 5, productId: 2, unit: "tsp" },
     { amount: 6, productId: 2, unit: "tbsp" },
     { amount: 7, productId: 3, unit: "piece" },
-  ], 2);
+  ], count: 2 });
 
   expect(lines).toEqual([
     { amount: 4006, productId: 1, unit: "g" },
@@ -22,8 +22,8 @@ test("converts every supported Recipe unit to its canonical dimension", () => {
 });
 
 test("does not combine a Product across measurement dimensions", () => {
-  expect(() => calculateRecipePreview([
+  expect(() => calculateRecipePreview({ requirements: [
     { amount: 1, productId: 1, unit: "g" },
     { amount: 1, productId: 1, unit: "ml" },
-  ], 1)).toThrow(new RecipeMeasurementError("A Product cannot use incompatible dimensions in one Recipe"));
+  ], count: 1 })).toThrow(new RecipeMeasurementError("A Product cannot use incompatible dimensions in one Recipe"));
 });

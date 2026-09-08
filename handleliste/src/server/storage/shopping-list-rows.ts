@@ -1,3 +1,5 @@
+import { Type, type Static } from "typebox";
+import { ingredientRequirementSchema, positiveIntegerSchema } from "../../domain/recipe.js";
 import type { MeasurementDimension, PackageUnit } from "../../domain/shopping-list.js";
 
 export interface ProductRow {
@@ -22,3 +24,17 @@ export interface AlwaysInStockDefinitionRow {
   position: number;
   product_id: number;
 }
+
+export const recipeRowSchema = Type.Object({
+  archived: Type.Union([Type.Literal(0), Type.Literal(1)]),
+  id: positiveIntegerSchema,
+  name: Type.String(),
+  note: Type.Union([Type.String(), Type.Null()]),
+});
+export type RecipeRow = Static<typeof recipeRowSchema>;
+export const recipeRequirementRowSchema = Type.Object({
+  recipe_id: positiveIntegerSchema,
+  product_id: ingredientRequirementSchema.properties.productId,
+  amount: ingredientRequirementSchema.properties.amount,
+  unit: ingredientRequirementSchema.properties.unit,
+});

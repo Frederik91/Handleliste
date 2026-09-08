@@ -1,14 +1,31 @@
-import type { RecipePreviewLine, Recipe } from "./recipe.js";
+import { Type, type Static } from "typebox";
+import { positiveIntegerSchema, recipeInputSchema, recipePreviewLineSchema } from "./recipe.js";
 
-export interface RecipeSelectionInput { recipeId: number; count: number }
-export interface SelectedRecipe extends RecipeSelectionInput {
-  name: string;
-  requirements: Recipe["requirements"];
-}
-export interface RecipeDemand extends RecipePreviewLine {
-  baseline: number;
-  supply: number;
-  clearedPurchased: number;
-  contributions: Array<{ recipeId: number; name: string; count: number; amount: number }>;
-}
-export interface ItemRecipeSources { baseline: number; generated: number }
+export const recipeSelectionInputSchema = Type.Object({
+  recipeId: positiveIntegerSchema,
+  count: positiveIntegerSchema,
+});
+export type RecipeSelectionInput = Static<typeof recipeSelectionInputSchema>;
+export const selectedRecipeSchema = Type.Object({
+  ...recipeSelectionInputSchema.properties,
+  name: recipeInputSchema.properties.name,
+  requirements: recipeInputSchema.properties.requirements,
+});
+export type SelectedRecipe = Static<typeof selectedRecipeSchema>;
+export const recipeDemandSchema = Type.Object({
+  ...recipePreviewLineSchema.properties,
+  baseline: Type.Number({ minimum: 0 }),
+  supply: Type.Number({ minimum: 0 }),
+  clearedPurchased: Type.Number({ minimum: 0 }),
+  contributions: Type.Array(Type.Object({
+    ...recipeSelectionInputSchema.properties,
+    name: recipeInputSchema.properties.name,
+    amount: recipePreviewLineSchema.properties.amount,
+  })),
+});
+export type RecipeDemand = Static<typeof recipeDemandSchema>;
+export const itemRecipeSourcesSchema = Type.Object({
+  baseline: Type.Integer({ minimum: 0 }),
+  generated: Type.Integer({ minimum: 0 }),
+});
+export type ItemRecipeSources = Static<typeof itemRecipeSourcesSchema>;
