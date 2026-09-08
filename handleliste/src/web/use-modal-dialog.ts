@@ -29,4 +29,3 @@ export function useModalDialog(open: boolean, onClose: () => void) {
 
   return { cancelDialog, dialogRef, synchronizeClosedDialog };
 }
-
