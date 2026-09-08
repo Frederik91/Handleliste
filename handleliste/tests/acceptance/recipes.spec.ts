@@ -1,5 +1,7 @@
 import { parseShoppingListSnapshot } from "../../src/domain/shopping-list.js";
 import { expect, test } from "@playwright/test";
+import { Type } from "typebox";
+import { Value } from "typebox/value";
 import {
   FRIDA,
   OLA,
@@ -38,12 +40,12 @@ test("manages recipes and previews combined requirements with supported conversi
       ["Eggs", "2", "piece"],
       ["Eggs", "3", "piece"],
     ] as const;
-    for (let index = 0; index < requirements.length; index += 1) {
+    for (const [index, [product, amount, unit]] of requirements.entries()) {
       if (index > 0) await manager.getByRole("button", { name: "Add ingredient" }).click();
       const row = manager.getByRole("group", { name: `Ingredient ${index + 1}` });
-      await row.getByRole("combobox", { name: "Product" }).selectOption({ label: requirements[index]![0] });
-      await row.getByRole("spinbutton", { name: "Amount" }).fill(requirements[index]![1]);
-      await row.getByRole("combobox", { name: "Unit" }).selectOption(requirements[index]![2]);
+      await row.getByRole("combobox", { name: "Product" }).selectOption({ label: product });
+      await row.getByRole("spinbutton", { name: "Amount" }).fill(amount);
+      await row.getByRole("combobox", { name: "Unit" }).selectOption(unit);
     }
     await manager.getByRole("button", { name: "Save" }).click();
 
@@ -112,12 +114,14 @@ test("rejects incompatible recipe dimensions transactionally", async ({ page }) 
         headers: { "content-type": "application/json" },
         method: "POST",
       });
-      return { body: await response.json(), status: response.status };
+      const body: unknown = await response.json();
+      return { body, status: response.status };
     }, productId);
     expect(result.status).toBe(400);
-    expect(result.body).toEqual({ error: "A Product cannot use incompatible dimensions in one Recipe" });
+    const errorBody = Value.Parse(Type.Object({ error: Type.String() }), result.body);
+    expect(errorBody).toEqual({ error: "A Product cannot use incompatible dimensions in one Recipe" });
 
-    const snapshot = await page.evaluate(async () => (await fetch("api/shopping-list")).json());
+    const snapshot = parseShoppingListSnapshot(await page.evaluate(async () => (await fetch("api/shopping-list")).json()));
     expect(snapshot.recipes).toEqual([]);
   } finally {
     await system.close();
