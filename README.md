@@ -1,6 +1,6 @@
 # Handleliste
 
-Handleliste is a shared shopping list for Home Assistant. The application runs as a Home Assistant App and uses Ingress for authentication.
+Handleliste is a shared, recipe-aware shopping list that opens directly from the Home Assistant sidebar. The application runs as a Home Assistant App, uses Ingress for authentication, and stores household data in SQLite under the persistent App data directory.
 
 This guide explains how to install the development dependencies and run the local test suite. You do not need a Home Assistant instance or an AI provider. The browser tests start the complete application with a temporary SQLite database and a fake Home Assistant boundary.
 
@@ -25,14 +25,14 @@ Docker Desktop is optional. Use it only to verify the production image.
    git --version
    ```
 
-4. Clone the repository and enter the application directory:
+4. Clone the repository and enter its root directory:
 
    ```powershell
    git clone https://github.com/Frederik91/Handleliste.git
-   cd Handleliste\handleliste
+   cd Handleliste
    ```
 
-   If you already cloned the repository, open its `handleliste` directory instead.
+   If you already cloned the repository, open its root directory instead.
 
 5. Install the dependencies and the Playwright browser:
 
@@ -65,7 +65,7 @@ npm.cmd test
 
 ## Inspect the UI locally
 
-From the `handleliste` application directory, start a persistent development instance:
+From the repository root, start a persistent development instance:
 
 ```powershell
 npm run dev
@@ -73,7 +73,7 @@ npm run dev
 
 The command builds the web interface and prints a local URL. Open that URL in a browser. It runs the real application and SQLite storage behind a small local Home Assistant substitute, so Ingress authentication works without a Home Assistant installation.
 
-Shopping-list changes persist in `handleliste\.dev-data` between runs. Press `Ctrl+C` to stop the server. To reset the local data, stop the server and run this command from the `handleliste` application directory:
+Shopping-list changes persist in `.dev-data` between runs. Press `Ctrl+C` to stop the server. To reset the local data, stop the server and run this command from the repository root:
 
 ```powershell
 Remove-Item -LiteralPath .dev-data -Recurse -Force
@@ -86,7 +86,6 @@ If PowerShell blocks `npm.ps1`, use `npm.cmd run dev` instead.
 Run these commands from the repository root:
 
 ```powershell
-cd handleliste
 npm ci
 npx playwright install chromium
 ```
@@ -114,7 +113,7 @@ npm test
 Run one acceptance-test file:
 
 ```powershell
-npx playwright test tests/acceptance/shopping-list.spec.ts
+npx playwright test tests/acceptance/shopping-items.spec.ts
 ```
 
 Run tests whose names contain `Quick Entry`:
@@ -139,11 +138,10 @@ Playwright writes failure details to `test-results/`. Git ignores this directory
 
 ## Verify the Docker image
 
-Return to the repository root, then build the same image used by the Home Assistant App:
+From the repository root, build the same image used by the Home Assistant App:
 
 ```powershell
-cd ..
-docker build --tag handleliste:test --file handleliste/Dockerfile handleliste
+docker build --tag handleliste:test .
 ```
 
 Start the image and publish its health endpoint:

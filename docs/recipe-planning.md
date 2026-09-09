@@ -12,4 +12,4 @@ Selections, their captured Ingredient Requirements, baseline measurements, and g
 
 Relative Manual Adjustments, Accepted Shortage confirmations, and confirmation workflows for changing selected Recipe definitions belong to issue #9. For now, reducing supply can show **Missing for recipes** without automatically replacing those packages.
 
-Browser acceptance coverage is in `handleliste/tests/acceptance/recipe-planning.spec.ts`; it runs against the complete application, temporary SQLite storage, and the Home Assistant Ingress test boundary.
+Browser acceptance coverage is in `tests/acceptance/recipe-planning.spec.ts`; it runs against the complete application, temporary SQLite storage, and the Home Assistant Ingress test boundary.
